@@ -1,0 +1,15 @@
+{
+    "client_id": "",
+    "site_name": "メルマガ管理システム",
+    "admin_email": "",
+    "admin_password": "",
+    "from_name": "",
+    "from_email": "",
+    "reply_to": "",
+    "register_email": "",
+    "batch_size": 100,
+    "send_interval": 0.1,
+    "double_optin": true,
+    "footer_text": "──────────────────────\n本メールの配信停止はこちら：\n{{unsubscribe_url}}\n──────────────────────",
+    "setup_done": false
+}

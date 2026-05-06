@@ -1,0 +1,3 @@
+# dataディレクトリへの直接アクセスを全て禁止
+Order allow,deny
+Deny from all

@@ -1,0 +1,29 @@
+<?php
+declare(strict_types=1);
+
+// ============================================================
+// config.php - クライアント固有設定
+// このファイルは config.php としてコピーし、各クライアントで編集する。
+// 自動更新でも上書きされない。
+// ============================================================
+
+// サイトURL（末尾スラッシュ必須）
+// 例: https://mail.example.com/mailmag/
+define('SITE_URL', 'https://example.com/mailmag/');
+
+// インストールディレクトリの絶対パス
+define('BASE_DIR', realpath(__DIR__));
+
+// データディレクトリ（既定: BASE_DIR/data）
+define('DATA_DIR', BASE_DIR . '/data');
+
+// ----- 以下はオプション。指定しなければ core 側の既定値が使われる -----
+
+// セッション設定
+// define('SESSION_NAME',     'mailmag_sess');
+// define('SESSION_LIFETIME', 3600);
+
+// 送信設定（admin.json での上書きが優先される）
+// define('BATCH_SIZE',     100);
+// define('SEND_INTERVAL',  0.1);
+// define('MAX_EXEC_TIME',  240);

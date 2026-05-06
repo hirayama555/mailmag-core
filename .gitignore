@@ -1,0 +1,27 @@
+# Build artifacts
+/dist/
+*.zip
+
+# Local development data (clients store theirs locally)
+/client-template/data/*
+!/client-template/data/.htaccess
+!/client-template/data/admin.json.example
+!/client-template/data/.gitkeep
+
+# Local configuration
+/client-template/config.php
+/client-template/core.lock
+/client-template/core/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Secrets
+*.pem
+*.key
+.env
+.env.local

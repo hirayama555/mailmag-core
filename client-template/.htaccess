@@ -1,0 +1,48 @@
+# ============================================================
+# .htaccess - インストールルートのセキュリティ設定
+# ============================================================
+
+# PHPエラーを非表示（本番）
+php_flag display_errors off
+php_flag log_errors on
+
+# セッション強化
+php_value session.cookie_httponly 1
+php_value session.use_only_cookies 1
+php_value session.cookie_samesite Strict
+
+# クリックジャッキング・XSS対策ヘッダー
+Header always set X-Frame-Options "SAMEORIGIN"
+Header always set X-Content-Type-Options "nosniff"
+Header always set X-XSS-Protection "1; mode=block"
+
+# register_mail.php はメールパイプ専用 → HTTP 直接アクセス禁止
+<Files "register_mail.php">
+    Order allow,deny
+    Deny from all
+</Files>
+
+# cron スクリプトは外部から直接アクセス禁止
+<Files "cron_*.php">
+    Order allow,deny
+    Deny from all
+</Files>
+
+# config.php は誤って配信されないよう deny（本来 PHP として処理されるが念のため）
+<Files "config.php">
+    Order allow,deny
+    Deny from all
+</Files>
+
+# core.lock も同様
+<Files "core.lock">
+    Order allow,deny
+    Deny from all
+</Files>
+
+# setup.php は初回設定後 admin.json の setup_done でも自己防御するが
+# 完全に安心するため、設定完了後は手動で deny してもよい:
+# <Files "setup.php">
+#     Order allow,deny
+#     Deny from all
+# </Files>
