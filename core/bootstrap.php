@@ -58,9 +58,7 @@ spl_autoload_register(function (string $class): void {
         'Lock'         => 'lock.php',
         'RateLimit'    => 'rate_limit.php',
         'Uuid'         => 'uuid.php',
-        // Phase 2:
         'Updater'      => 'updater.php',
-        'SentryClient' => 'sentry_client.php',
     ];
     if (!isset($map[$class])) return;
     $file = CORE_LIB_DIR . '/' . $map[$class];
@@ -91,5 +89,39 @@ final class MailMag
     }
 }
 
-// ---- Sentry 早期インストール（Phase 2 で実装）----------------
-// if (class_exists('SentryClient')) { SentryClient::install(); }
+// ---- 致命エラーのファイルログ ---------------------------------
+// Sentry はスキップしたので、未捕捉例外・致命エラーを data/error.log に追記。
+// クライアント側で「何かおかしい」と感じたときに最初に見る場所。
+// 1MB 超で .1 へローテート（履歴1世代）。
+(function (): void {
+    $logger = function (string $msg): void {
+        $path = DATA_DIR . '/error.log';
+        if (is_file($path) && filesize($path) > 1048576) {
+            @rename($path, $path . '.1'); // 旧 .1 を上書きする運用（1世代）
+        }
+        @file_put_contents(
+            $path,
+            '[' . date('Y-m-d H:i:s') . '] ' . $msg . PHP_EOL,
+            FILE_APPEND | LOCK_EX
+        );
+    };
+
+    set_exception_handler(function (Throwable $e) use ($logger): void {
+        $logger(sprintf(
+            'UNCAUGHT %s: %s @ %s:%d',
+            get_class($e), $e->getMessage(), $e->getFile(), $e->getLine()
+        ));
+    });
+
+    register_shutdown_function(function () use ($logger): void {
+        $err = error_get_last();
+        if (!$err) return;
+        // 致命系のみ（warning/notice は通常運用ノイズなので拾わない）
+        $fatal = E_ERROR | E_PARSE | E_CORE_ERROR | E_COMPILE_ERROR | E_USER_ERROR;
+        if (($err['type'] & $fatal) === 0) return;
+        $logger(sprintf(
+            'FATAL %d: %s @ %s:%d',
+            $err['type'], $err['message'], $err['file'], $err['line']
+        ));
+    });
+})();

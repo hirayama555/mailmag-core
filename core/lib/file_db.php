@@ -76,28 +76,69 @@ final class FileDB
 
     public static function updateSubscriber(string $id, array $updates): bool
     {
-        $subs  = self::getSubscribers();
-        $found = false;
-        foreach ($subs as &$sub) {
-            if ($sub['id'] === $id) {
-                foreach ($updates as $k => $v) {
-                    $sub[$k] = $v;
+        // race condition 対策: 1つの LOCK_EX 内で read-modify-write を完結
+        return self::modifyCsvAtomic(
+            DATA_DIR . '/subscribers.csv',
+            ['id','email','name','status','token','created_at','updated_at'],
+            function (array $rows) use ($id, $updates) {
+                $found = false;
+                foreach ($rows as &$row) {
+                    if ($row['id'] === $id) {
+                        foreach ($updates as $k => $v) $row[$k] = $v;
+                        $row['updated_at'] = date('Y-m-d H:i:s');
+                        $found = true;
+                        break;
+                    }
                 }
-                $sub['updated_at'] = date('Y-m-d H:i:s');
-                $found = true;
-                break;
+                unset($row);
+                return $found ? $rows : false; // 該当無しは書き戻しせず中止
             }
-        }
-        unset($sub);
-        if (!$found) return false;
-        return self::writeSubscribers($subs);
+        );
     }
 
     public static function deleteSubscriber(string $id): bool
     {
-        $subs = self::getSubscribers();
-        $subs = array_values(array_filter($subs, fn($s) => $s['id'] !== $id));
-        return self::writeSubscribers($subs);
+        return self::modifyCsvAtomic(
+            DATA_DIR . '/subscribers.csv',
+            ['id','email','name','status','token','created_at','updated_at'],
+            fn(array $rows) => array_values(array_filter($rows, fn($r) => $r['id'] !== $id))
+        );
+    }
+
+    /**
+     * 原子的な「emailが未登録なら追加」。重複時は false を返す。
+     * findByEmail → addSubscriber の二段操作だと race window があるため、
+     * このメソッドを呼び出し側に使わせて重複登録を物理的に防止する。
+     */
+    public static function addSubscriberIfNew(array $sub): bool
+    {
+        $needle = strtolower($sub['email'] ?? '');
+        if ($needle === '') return false;
+
+        $added = false;
+        $ok = self::modifyCsvAtomic(
+            DATA_DIR . '/subscribers.csv',
+            ['id','email','name','status','token','created_at','updated_at'],
+            function (array $rows) use ($sub, $needle, &$added) {
+                foreach ($rows as $r) {
+                    if (strtolower($r['email']) === $needle) {
+                        return false; // 既存 → 中止
+                    }
+                }
+                $rows[] = [
+                    'id'         => $sub['id'],
+                    'email'      => $sub['email'],
+                    'name'       => $sub['name'] ?? '',
+                    'status'     => $sub['status'] ?? '1',
+                    'token'      => $sub['token'],
+                    'created_at' => $sub['created_at'],
+                    'updated_at' => $sub['updated_at'] ?? $sub['created_at'],
+                ];
+                $added = true;
+                return $rows;
+            }
+        );
+        return $ok && $added;
     }
 
     public static function findByEmail(string $email): ?array
@@ -128,25 +169,6 @@ final class FileDB
             elseif ($sub['status'] === '9')  $counts['unsubscribed']++;
         }
         return $counts;
-    }
-
-    private static function writeSubscribers(array $subs): bool
-    {
-        $path = DATA_DIR . '/subscribers.csv';
-        $fp = fopen($path, 'w');
-        if (!$fp) return false;
-        flock($fp, LOCK_EX);
-        fputcsv($fp, ['id','email','name','status','token','created_at','updated_at']);
-        foreach ($subs as $sub) {
-            fputcsv($fp, [
-                $sub['id'], $sub['email'], $sub['name'],
-                $sub['status'], $sub['token'],
-                $sub['created_at'], $sub['updated_at'],
-            ]);
-        }
-        flock($fp, LOCK_UN);
-        fclose($fp);
-        return true;
     }
 
     // ---- ダブルオプトイン保留 CSV --------------------------
@@ -202,19 +224,77 @@ final class FileDB
 
     public static function deletePending(string $token): bool
     {
-        $list = self::getPending();
-        $list = array_values(array_filter($list, fn($p) => $p['token'] !== $token));
-        $path = PENDING_DIR . '/pending.csv';
-        $fp = fopen($path, 'w');
-        if (!$fp) return false;
-        flock($fp, LOCK_EX);
-        fputcsv($fp, ['email','name','token','source','created_at']);
-        foreach ($list as $p) {
-            fputcsv($fp, [$p['email'], $p['name'], $p['token'], $p['source'], $p['created_at']]);
-        }
-        flock($fp, LOCK_UN);
-        fclose($fp);
-        return true;
+        return self::modifyCsvAtomic(
+            PENDING_DIR . '/pending.csv',
+            ['email','name','token','source','created_at'],
+            fn(array $rows) => array_values(array_filter($rows, fn($p) => $p['token'] !== $token))
+        );
+    }
+
+    /**
+     * 原子的な「emailが pending に未登録なら追加」。重複時は false を返す。
+     * register.php で同時2連投しても pending が重複登録されないようにする。
+     */
+    public static function addPendingIfNew(array $p): bool
+    {
+        $needle = strtolower($p['email'] ?? '');
+        if ($needle === '') return false;
+
+        if (!is_dir(PENDING_DIR)) @mkdir(PENDING_DIR, 0755, true);
+
+        $added = false;
+        $ok = self::modifyCsvAtomic(
+            PENDING_DIR . '/pending.csv',
+            ['email','name','token','source','created_at'],
+            function (array $rows) use ($p, $needle, &$added) {
+                foreach ($rows as $r) {
+                    if (strtolower($r['email']) === $needle) {
+                        return false; // 既存 → 中止
+                    }
+                }
+                $rows[] = [
+                    'email'      => $p['email'],
+                    'name'       => $p['name']   ?? '',
+                    'token'      => $p['token'],
+                    'source'     => $p['source'] ?? 'web',
+                    'created_at' => $p['created_at'],
+                ];
+                $added = true;
+                return $rows;
+            }
+        );
+        return $ok && $added;
+    }
+
+    /**
+     * 原子的な「token に該当する pending を1件取り出して削除」。
+     * register_confirm の「同時クリックで2回処理される」を防ぐ。
+     * 該当無しの場合は null を返し、その場合 CSV は変更されない。
+     */
+    public static function claimPendingToken(string $token): ?array
+    {
+        if ($token === '') return null;
+
+        $claimed = null;
+        $ok = self::modifyCsvAtomic(
+            PENDING_DIR . '/pending.csv',
+            ['email','name','token','source','created_at'],
+            function (array $rows) use ($token, &$claimed) {
+                $remaining = [];
+                foreach ($rows as $r) {
+                    if ($claimed === null && $r['token'] === $token) {
+                        $claimed = $r;
+                        continue; // この行は削除
+                    }
+                    $remaining[] = $r;
+                }
+                if ($claimed === null) {
+                    return false; // 該当無し → 書き戻ししない
+                }
+                return $remaining;
+            }
+        );
+        return ($ok && $claimed !== null) ? $claimed : null;
     }
 
     // ---- テンプレート JSON ---------------------------------
@@ -324,6 +404,69 @@ final class FileDB
     public static function generateId(): string
     {
         return date('YmdHis') . sprintf('%04d', mt_rand(0, 9999));
+    }
+
+    /**
+     * read-modify-write を 1 つの LOCK_EX 内で完結させる汎用ヘルパ。
+     *
+     * - 排他ロック取得 → 全行読み込み → $fn(rows) を呼び出し →
+     *   返値が array なら header + rows を書き戻し、false なら何もしない。
+     * - findByEmail/addSubscriber のような二段呼び出しで発生していた
+     *   race condition（同時POSTで重複行が出来る等）を構造的に潰す。
+     * - $fn は array|false を返すこと（false 時は CSV を一切変更しない）。
+     *
+     * @param array<int,string> $header
+     * @param callable(array<int,array<string,mixed>>):(array|false) $fn
+     */
+    private static function modifyCsvAtomic(string $path, array $header, callable $fn): bool
+    {
+        $dir = dirname($path);
+        if (!is_dir($dir)) @mkdir($dir, 0755, true);
+
+        // c+ : 存在しなければ作成、ポインタ先頭、既存内容は保持、読み書き可
+        $fp = @fopen($path, 'c+');
+        if (!$fp) return false;
+
+        if (!flock($fp, LOCK_EX)) {
+            fclose($fp);
+            return false;
+        }
+
+        try {
+            // ---- 読み込み ----
+            rewind($fp);
+            $rows = [];
+            $hdr  = null;
+            while (($line = fgetcsv($fp)) !== false) {
+                if ($hdr === null) { $hdr = $line; continue; }
+                if (count($line) === count($hdr)) {
+                    $rows[] = array_combine($hdr, $line);
+                }
+            }
+
+            // ---- 変更 ----
+            $newRows = $fn($rows);
+            if ($newRows === false) {
+                return false; // 中止 (CSV は変更しない)
+            }
+
+            // ---- 書き戻し ----
+            rewind($fp);
+            ftruncate($fp, 0);
+            fputcsv($fp, $header);
+            foreach ($newRows as $row) {
+                $line = [];
+                foreach ($header as $col) {
+                    $line[] = $row[$col] ?? '';
+                }
+                fputcsv($fp, $line);
+            }
+            fflush($fp);
+            return true;
+        } finally {
+            flock($fp, LOCK_UN);
+            fclose($fp);
+        }
     }
 
     /**

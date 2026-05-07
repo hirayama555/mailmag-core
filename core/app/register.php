@@ -36,25 +36,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // すでに本登録済み → メールアドレスを漏らさないよう同じ完了画面
             $done = true;
         } else {
-            // 既に保留中かチェック
-            $pending = FileDB::getPending();
-            $exists  = false;
-            foreach ($pending as $p) {
-                if (strtolower($p['email']) === strtolower($email)) {
-                    $exists = true;
-                    break;
-                }
-            }
+            // race condition 対策: 重複チェックと追加を 1 つの LOCK_EX 内で原子実行。
+            // 同時2連投でも pending が重複登録されない。
+            $token = Token::generate();
+            $added = FileDB::addPendingIfNew([
+                'email'      => $email,
+                'name'       => $name,
+                'token'      => $token,
+                'source'     => 'web',
+                'created_at' => date('Y-m-d H:i:s'),
+            ]);
 
-            if (!$exists) {
-                $token = Token::generate();
-                FileDB::addPending([
-                    'email'      => $email,
-                    'name'       => $name,
-                    'token'      => $token,
-                    'source'     => 'web',
-                    'created_at' => date('Y-m-d H:i:s'),
-                ]);
+            if ($added) {
                 $mailer = new Mailer($admin);
                 $mailer->sendConfirmMail($email, Token::confirmUrl($token));
             }

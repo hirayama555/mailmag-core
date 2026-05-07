@@ -1,0 +1,49 @@
+name: Release core.zip
+
+# tag (vX.Y.Z) push で起動。
+# 役割は core.zip のビルドとドラフトリリース作成のみ。
+# 署名 (core.zip.sig) は秘密鍵を持つ開発者ローカルで生成・アップロードする。
+# ワークフロー上に秘密鍵を置かない設計（Actions ランナー乗っ取り耐性のため）。
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # gh release create のため
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate VERSION matches tag
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          FILE_VERSION="$(tr -d '[:space:]' < core/VERSION)"
+          if [ "$TAG_VERSION" != "$FILE_VERSION" ]; then
+            echo "::error ::Tag $GITHUB_REF_NAME does not match core/VERSION ($FILE_VERSION)"
+            exit 1
+          fi
+          echo "Version OK: $FILE_VERSION"
+
+      - name: Build core.zip
+        run: |
+          # core/ の中身をトップレベルに置いて zip 化（解凍時に core/ という階層を作らない）
+          cd core
+          zip -r ../core.zip . -x "*.DS_Store" -x "*.swp" -x "*.bak"
+          cd ..
+          ls -la core.zip
+          unzip -l core.zip | head -20
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --draft \
+            --title "$GITHUB_REF_NAME" \
+            --notes "Build by GitHub Actions. **署名 (core.zip.sig) を手元でアップロードしてからリリース公開してください。** 手順は docs/PHASE2.md を参照。" \
+            core.zip

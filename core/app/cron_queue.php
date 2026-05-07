@@ -27,6 +27,21 @@ $admin  = FileDB::getAdmin();
 $mailer = new Mailer($admin);
 $now    = date('Y-m-d H:i:s');
 
+// ---- 自動更新チェック相乗り（1日1回）------------------------
+// クライアント側に cron 設定を追加させないため、既存 cron_queue の
+// 開頭で更新チェックを走らせる。data/.update_check の mtime が 24時間以上
+// 前ならチェックを実行し、終了後に touch する（キューが空のクライアントでも
+// 確実に走るよう、早期 exit より前で実施）。
+$checkFlag = DATA_DIR . '/.update_check';
+$lastCheck = is_file($checkFlag) ? (int)filemtime($checkFlag) : 0;
+if (time() - $lastCheck >= 86400) {
+    if (class_exists('Updater') && Lock::acquire('cron_update')) {
+        $r = Updater::checkAndApply();
+        echo "[{$now}] update: {$r['status']}: {$r['message']}" . PHP_EOL;
+    }
+    @touch($checkFlag); // 失敗時も次回まで間隔を空ける（連続呼び出し抑止）
+}
+
 // ---- pending なキューを取得 -------------------------------
 $queues = FileDB::getQueueList();
 $queue  = null;

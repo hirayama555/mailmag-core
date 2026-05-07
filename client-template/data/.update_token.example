@@ -1,0 +1,5 @@
+REPLACE_WITH_GITHUB_PAT_FOR_PRIVATE_REPO_PERIOD_ONLY
+# このファイルを `.update_token` にリネームし、上の行を実際の
+# GitHub Personal Access Token (read:packages) に置き換える。
+# リポジトリが public 化されたあとは削除して構わない。
+# Web からアクセスされないよう data/.htaccess で deny 済み。

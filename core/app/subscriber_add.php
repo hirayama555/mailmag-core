@@ -25,8 +25,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $email = isset($row[0]) ? trim($row[0]) : '';
                     $name  = isset($row[1]) ? trim($row[1]) : '';
                     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) continue;
-                    if (FileDB::findByEmail($email)) continue;
-                    FileDB::addSubscriber([
+                    // 原子的追加: 同一CSV内の重複・他プロセスとの競合の両方を防ぐ
+                    $added = FileDB::addSubscriberIfNew([
                         'id'         => FileDB::generateId(),
                         'email'      => $email,
                         'name'       => $name,
@@ -35,7 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'created_at' => date('Y-m-d H:i:s'),
                         'updated_at' => date('Y-m-d H:i:s'),
                     ]);
-                    $success++;
+                    if ($added) $success++;
                 }
                 fclose($fp);
             }
@@ -44,10 +44,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $name  = trim($_POST['name']  ?? '');
             if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 $errors[] = 'メールアドレスの形式が正しくありません。';
-            } elseif (FileDB::findByEmail($email)) {
-                $errors[] = 'このメールアドレスはすでに登録されています。';
             } else {
-                FileDB::addSubscriber([
+                // 原子的追加: 同時POSTでの重複登録を物理的に防ぐ
+                $added = FileDB::addSubscriberIfNew([
                     'id'         => FileDB::generateId(),
                     'email'      => $email,
                     'name'       => $name,
@@ -56,7 +55,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'created_at' => date('Y-m-d H:i:s'),
                     'updated_at' => date('Y-m-d H:i:s'),
                 ]);
-                $success = 1;
+                if ($added) {
+                    $success = 1;
+                } else {
+                    $errors[] = 'このメールアドレスはすでに登録されています。';
+                }
             }
         }
     }

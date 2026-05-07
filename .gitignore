@@ -6,6 +6,7 @@
 /client-template/data/*
 !/client-template/data/.htaccess
 !/client-template/data/admin.json.example
+!/client-template/data/.update_token.example
 !/client-template/data/.gitkeep
 
 # Local configuration

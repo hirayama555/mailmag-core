@@ -6,24 +6,27 @@ $token = $_GET['token'] ?? '';
 $state = 'invalid'; // invalid / expired / already / done
 
 if ($token) {
-    $pending = FileDB::findPendingByToken($token);
+    // race condition 対策: 「pendingを find して delete」を原子化。
+    // 同時に同一URLが2回叩かれても claimPendingToken が成功するのは
+    // 1回だけ。2回目以降は null が返るので welcome メールも1通だけ。
+    $pending = FileDB::claimPendingToken($token);
 
     if (!$pending) {
-        // すでに本登録済みか確認
+        // 既に消化済みか、最初から無効
         $sub = FileDB::findByToken($token);
         $state = $sub ? 'already' : 'invalid';
     } else {
+        // claimPendingToken が成功した時点で pending は既に削除済み
+
         // 有効期限チェック（48時間）
         $createdAt = strtotime($pending['created_at']);
         if (time() - $createdAt > 48 * 3600) {
-            FileDB::deletePending($token);
             $state = 'expired';
-        } elseif (FileDB::findByEmail($pending['email'])) {
-            FileDB::deletePending($token);
-            $state = 'already';
         } else {
             $now = date('Y-m-d H:i:s');
-            $sub = [
+            // 原子的な「emailが未登録なら追加」。同一メールの本登録レコードは
+            // ここで二重登録を物理的に防ぐ。
+            $added = FileDB::addSubscriberIfNew([
                 'id'         => FileDB::generateId(),
                 'email'      => $pending['email'],
                 'name'       => $pending['name'] ?? '',
@@ -31,21 +34,23 @@ if ($token) {
                 'token'      => $token,
                 'created_at' => $now,
                 'updated_at' => $now,
-            ];
-            FileDB::addSubscriber($sub);
-            FileDB::deletePending($token);
+            ]);
 
-            // 登録完了メール送信
-            $siteName    = $admin['site_name'] ?? 'メルマガ';
-            $unsubUrl    = Token::unsubscribeUrl($token);
-            $mailer      = new Mailer($admin);
-            $welcomeBody = "{$siteName} への登録が完了しました。\r\n\r\n"
-                . "今後ともよろしくお願いいたします。\r\n\r\n"
-                . "購読を解除する場合は以下のURLからお手続きください。\r\n"
-                . $unsubUrl;
-            $mailer->send($pending['email'], "【{$siteName}】登録完了のご確認", $welcomeBody, '', $unsubUrl);
+            if (!$added) {
+                $state = 'already';
+            } else {
+                // 登録完了メール送信
+                $siteName    = $admin['site_name'] ?? 'メルマガ';
+                $unsubUrl    = Token::unsubscribeUrl($token);
+                $mailer      = new Mailer($admin);
+                $welcomeBody = "{$siteName} への登録が完了しました。\r\n\r\n"
+                    . "今後ともよろしくお願いいたします。\r\n\r\n"
+                    . "購読を解除する場合は以下のURLからお手続きください。\r\n"
+                    . $unsubUrl;
+                $mailer->send($pending['email'], "【{$siteName}】登録完了のご確認", $welcomeBody, '', $unsubUrl);
 
-            $state = 'done';
+                $state = 'done';
+            }
         }
     }
 }
