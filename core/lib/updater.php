@@ -23,10 +23,10 @@ declare(strict_types=1);
 final class Updater
 {
     /** 公開鍵 (hex)。tools/sign-release.php keygen の出力を貼る。 */
-    private const PUBKEY_HEX = '';
+    private const PUBKEY_HEX = 'd9444703043fb67e83c437b474e57cc5609dd336e86d212a01640c3897ca8f1b';
 
     /** GitHub リポジトリ "<owner>/<repo>"。リリース作成前に書き換える。 */
-    private const REPO = 'OWNER/REPO';
+    private const REPO = 'hirayama555/mailmag-core';
 
     private const ASSET_ZIP = 'core.zip';
     private const ASSET_SIG = 'core.zip.sig';
