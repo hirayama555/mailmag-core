@@ -26,3 +26,5 @@ Thumbs.db
 *.key
 .env
 .env.local
+.aidesigner/*
+!.aidesigner/.gitkeep
