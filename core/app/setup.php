@@ -6,8 +6,8 @@ declare(strict_types=1);
 //
 // 旧版からの主要変更:
 //   - セットアップ完了時に client_id (UUID v4) を自動生成し
-//     admin.json に保存する。Phase 2 で Sentry のタグ・GitHub
-//     エラー集約のクライアント識別子として利用される。
+//     admin.json に保存する。インスタンス識別子（複数台運用時の
+//     区別など、内部用）として利用される。
 //   - setup_done が真ならファイル冒頭で die（自己防御）
 // ============================================================
 
@@ -35,7 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     elseif ($p['password'] !== $p['password_confirm'])   $error = 'パスワードが一致しません。';
     else {
         $newAdmin = [
-            'client_id'      => Uuid::v4(), // ★Phase2: Sentry タグ・エラー集約のキー
+            'client_id'      => Uuid::v4(), // インスタンス識別子（生成のみ。現状用途なし）
             'site_name'      => trim($p['site_name']),
             'admin_email'    => trim($p['admin_email']),
             'admin_password' => Auth::hashPassword($p['password']),

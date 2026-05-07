@@ -44,6 +44,6 @@ mailmag-core/
 ## Phase ロードマップ
 
 - [x] **Phase 1**: コア構造の確立 + 既存バグ修正 + シェル化
-- [ ] **Phase 2**: 自動更新 (`updater.php` / `cron_update.php`) + Sentry 集約
+- [ ] **Phase 2**: 自動更新 (`updater.php` / `cron_update.php`)
 - [ ] **Phase 3**: GitHub Actions による Release ビルド + Ed25519 署名
 - [ ] **Phase 4**: 既存環境からの移行手順

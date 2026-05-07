@@ -14,7 +14,7 @@
 2. GitHub Actions が core.zip + manifest.json + .sig を自動生成
 3. 各クライアントの cron_update.php が翌日 0:00 にこれを取得
 4. 署名検証 → SHA-256 検証 → 一時 dir に展開 → 既存 core/ をアトミック差替え
-5. 失敗時は古い core/ のまま継続稼働 + Sentry に warning
+5. 失敗時は古い core/ のまま継続稼働 + data/update.log に warning
 ```
 
 ## ロールバック
