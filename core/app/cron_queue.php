@@ -100,9 +100,11 @@ foreach ($batchIds as $subId) {
         continue;
     }
 
-    $unsubUrl = Token::unsubscribeUrl($sub['token']);
-    $body     = Mailer::replacePlaceholders($queue['body'], $sub);
-    $result   = $mailer->send($sub['email'], $queue['subject'], $body, '', $unsubUrl);
+    $unsubUrl    = Token::unsubscribeUrl($sub['token']);
+    $body        = Mailer::replacePlaceholders($queue['body'], $sub);
+    $queueHtml   = $queue['html_body'] ?? '';
+    $htmlBodyOut = $queueHtml !== '' ? Mailer::replacePlaceholders($queueHtml, $sub) : '';
+    $result      = $mailer->send($sub['email'], $queue['subject'], $body, $htmlBodyOut, $unsubUrl);
 
     if ($result) {
         $successCount++;

@@ -29,6 +29,7 @@ $msgMap = [
     'no_subscribers'   => ['warn',    '配信対象の有効な購読者がいません。'],
     'empty'            => ['danger',  '件名と本文を入力してください。'],
     'invalid_schedule' => ['danger',  '予約日時が不正または過去の日時です。未来の日時を指定してください。'],
+    'post_too_large'   => ['danger',  '送信データが大きすぎます。画像は外部ホスティング（外部URL参照）を使用してください。'],
 ];
 $msgKey = $_GET['msg'] ?? ($_GET['err'] ?? '');
 if (isset($msgMap[$msgKey])) {
@@ -66,7 +67,8 @@ require_once CORE_INCLUDES_DIR . '/header.php';
                                 <?php foreach ($templates as $t): ?>
                                     <option value="<?= htmlspecialchars($t['id'], ENT_QUOTES, 'UTF-8') ?>"
                                             data-subject="<?= htmlspecialchars($t['subject'] ?? '', ENT_QUOTES, 'UTF-8') ?>"
-                                            data-body="<?= htmlspecialchars($t['body'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
+                                            data-body="<?= htmlspecialchars($t['body'] ?? '', ENT_QUOTES, 'UTF-8') ?>"
+                                            data-html-body="<?= htmlspecialchars($t['html_body'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
                                         <?= htmlspecialchars($t['name'], ENT_QUOTES, 'UTF-8') ?>
                                     </option>
                                 <?php endforeach; ?>
@@ -91,6 +93,29 @@ require_once CORE_INCLUDES_DIR . '/header.php';
                             <code>{{email}}</code>（メールアドレス）<br>
                             フッターの購読解除URLは自動付加されます。
                         </p>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" id="html_mode" name="html_mode" value="1"
+                                   onchange="toggleHtmlMode(this)"
+                                   <?= !empty($prefill['html_body']) ? 'checked' : '' ?>>
+                            HTMLメールとして送信する
+                        </label>
+                        <p class="form-hint">チェックすると HTML 本文欄が表示されます。画像は外部URL（&lt;img src="https://..."&gt;）で参照してください。</p>
+                    </div>
+
+                    <div id="html_body_group" style="display:<?= !empty($prefill['html_body']) ? 'block' : 'none' ?>;">
+                        <div class="form-group">
+                            <label class="form-label">HTML 本文</label>
+                            <textarea name="html_body" id="html_body" class="form-control"
+                                      style="min-height:320px;font-family:monospace;"
+                            ><?= htmlspecialchars($prefill['html_body'] ?? '', ENT_QUOTES, 'UTF-8') ?></textarea>
+                            <p class="form-hint">
+                                上の「本文」欄はテキストメール用（HTML非対応のメーラー向け）に引き続き使用されます。<br>
+                                HTML 本文が空の場合はテキストのみで送信されます。
+                            </p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -176,12 +201,24 @@ function toggleSchedule(el) {
     document.getElementById('schedule_inputs').style.display =
         el.value === 'reserve' ? 'block' : 'none';
 }
+function toggleHtmlMode(el) {
+    const group = document.getElementById('html_body_group');
+    group.style.display = el.checked ? 'block' : 'none';
+    if (!el.checked) {
+        document.getElementById('html_body').value = '';
+    }
+}
 function loadTemplate() {
     const sel = document.getElementById('tpl_select');
     const opt = sel.options[sel.selectedIndex];
     if (!opt.value) return;
-    document.getElementById('subject').value = opt.dataset.subject;
-    document.getElementById('body').value    = opt.dataset.body;
+    document.getElementById('subject').value   = opt.dataset.subject;
+    document.getElementById('body').value      = opt.dataset.body;
+    const htmlBody = opt.dataset.htmlBody || '';
+    document.getElementById('html_body').value = htmlBody;
+    const htmlMode = document.getElementById('html_mode');
+    htmlMode.checked = htmlBody !== '';
+    toggleHtmlMode(htmlMode);
 }
 </script>
 

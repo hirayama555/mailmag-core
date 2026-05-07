@@ -8,6 +8,25 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
+// post_max_size 超過チェック（超過時は $_POST が空になるため CSRF より先に行う）
+(function () {
+    $contentLength = (int)($_SERVER['CONTENT_LENGTH'] ?? 0);
+    if ($contentLength <= 0) return;
+    $val  = trim((string)ini_get('post_max_size'));
+    $last = strtolower($val[-1] ?? '');
+    $num  = (int)$val;
+    $max  = match ($last) {
+        'g'     => $num * 1073741824,
+        'm'     => $num * 1048576,
+        'k'     => $num * 1024,
+        default => $num,
+    };
+    if (empty($_POST) && $contentLength > $max) {
+        header('Location: ' . SITE_URL . 'send.php?err=post_too_large');
+        exit;
+    }
+})();
+
 if (!Token::verifyCsrf($_POST['csrf_token'] ?? '')) {
     die('不正なリクエストです。');
 }
@@ -15,8 +34,9 @@ if (!Token::verifyCsrf($_POST['csrf_token'] ?? '')) {
 $admin    = FileDB::getAdmin();
 $mailer   = new Mailer($admin);
 $sendMode = $_POST['send_mode'] ?? 'send';
-$subject  = trim($_POST['subject'] ?? '');
-$body     = trim($_POST['body']    ?? '');
+$subject  = trim($_POST['subject']   ?? '');
+$body     = trim($_POST['body']      ?? '');
+$htmlBody = trim($_POST['html_body'] ?? '');
 
 if (!$subject || !$body) {
     header('Location: ' . SITE_URL . 'send.php?err=empty');
@@ -27,10 +47,11 @@ if (!$subject || !$body) {
 if ($sendMode === 'test') {
     $testEmail = trim($_POST['test_email'] ?? $admin['admin_email'] ?? '');
     if (filter_var($testEmail, FILTER_VALIDATE_EMAIL)) {
-        $testSub  = ['name' => 'テストユーザー', 'email' => $testEmail];
-        $testBody = Mailer::replacePlaceholders($body, $testSub);
-        $unsubUrl = SITE_URL . 'unsubscribe.php?token=test_token';
-        $result   = $mailer->send($testEmail, '【テスト】' . $subject, $testBody, '', $unsubUrl);
+        $testSub      = ['name' => 'テストユーザー', 'email' => $testEmail];
+        $testBody     = Mailer::replacePlaceholders($body, $testSub);
+        $testHtmlBody = $htmlBody !== '' ? Mailer::replacePlaceholders($htmlBody, $testSub) : '';
+        $unsubUrl     = SITE_URL . 'unsubscribe.php?token=test_token';
+        $result       = $mailer->send($testEmail, '【テスト】' . $subject, $testBody, $testHtmlBody, $unsubUrl);
         $msg = $result ? 'test_ok' : 'test_fail';
     } else {
         $msg = 'test_invalid';
@@ -75,6 +96,7 @@ $queue = [
     'id'           => $queueId,
     'subject'      => $subject,
     'body'         => $body,
+    'html_body'    => $htmlBody,
     'total_count'  => count($subs),
     'sent_count'   => 0,
     'success_count'=> 0,
@@ -93,6 +115,7 @@ FileDB::addHistory([
     'id'            => $queueId,
     'subject'       => $subject,
     'body'          => $body,
+    'html_body'     => $htmlBody,
     'total_count'   => count($subs),
     'success_count' => 0,
     'status'        => $scheduleType === 'reserve' ? 'reserved' : 'sending',
