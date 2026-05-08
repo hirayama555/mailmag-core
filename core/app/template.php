@@ -16,9 +16,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header('Location: ' . SITE_URL . 'template.php?msg=deleted');
         exit;
     } else {
-        $name    = trim($_POST['name']    ?? '');
-        $subject = trim($_POST['subject'] ?? '');
-        $body    = trim($_POST['body']    ?? '');
+        $name     = trim($_POST['name']      ?? '');
+        $subject  = trim($_POST['subject']   ?? '');
+        $body     = trim($_POST['body']      ?? '');
+        $htmlBody = trim($_POST['html_body'] ?? '');
 
         if (!$name) {
             $error = 'テンプレート名を入力してください。';
@@ -26,7 +27,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($editId) {
                 foreach ($templates as &$t) {
                     if ($t['id'] === $editId) {
-                        $t['name'] = $name; $t['subject'] = $subject; $t['body'] = $body;
+                        $t['name']      = $name;
+                        $t['subject']   = $subject;
+                        $t['body']      = $body;
+                        $t['html_body'] = $htmlBody;
                         break;
                     }
                 }
@@ -37,6 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'name'       => $name,
                     'subject'    => $subject,
                     'body'       => $body,
+                    'html_body'  => $htmlBody,
                     'created_at' => date('Y-m-d H:i:s'),
                 ];
             }
@@ -119,6 +124,11 @@ require_once CORE_INCLUDES_DIR . '/header.php';
                 <div class="form-group">
                     <label class="form-label">本文</label>
                     <textarea name="body" class="form-control" style="min-height:240px;font-family:monospace;"><?= htmlspecialchars($editTarget['body'] ?? $_POST['body'] ?? '', ENT_QUOTES, 'UTF-8') ?></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">HTML 本文</label>
+                    <textarea name="html_body" class="form-control" style="min-height:240px;font-family:monospace;" placeholder="（任意）HTMLメール用。空ならテキストのみ送信"><?= htmlspecialchars($editTarget['html_body'] ?? $_POST['html_body'] ?? '', ENT_QUOTES, 'UTF-8') ?></textarea>
+                    <p class="form-hint">空欄ならテキストのみのテンプレートになります。送信画面で読み込むと自動で HTML モードが ON になります。</p>
                 </div>
                 <div class="flex gap-3">
                     <button type="submit" class="btn btn-primary">保存</button>

@@ -34,11 +34,19 @@ require_once CORE_INCLUDES_DIR . '/header.php';
         </div>
         <div class="card-body">
             <div class="form-group">
-                <label class="form-label">本文</label>
+                <label class="form-label">本文（テキスト）</label>
                 <pre style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;
                             padding:16px;font-size:13px;line-height:1.7;white-space:pre-wrap;
                             font-family:inherit;"><?= htmlspecialchars($h['body'], ENT_QUOTES, 'UTF-8') ?></pre>
             </div>
+            <?php if (!empty($h['html_body'])): ?>
+            <div class="form-group">
+                <label class="form-label">HTML 本文（ソース）</label>
+                <pre style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;
+                            padding:16px;font-size:13px;line-height:1.7;white-space:pre-wrap;
+                            font-family:monospace;"><?= htmlspecialchars($h['html_body'], ENT_QUOTES, 'UTF-8') ?></pre>
+            </div>
+            <?php endif; ?>
             <a href="<?= SITE_URL ?>send.php?history_id=<?= urlencode($id) ?>"
                class="btn btn-outline">この内容で再送信</a>
         </div>
