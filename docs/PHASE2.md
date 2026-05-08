@@ -123,6 +123,30 @@ gh release edit v1.1.0 --draft=false
 2. クライアントには「`data/.update_token` を削除して問題ありません」と通知
 3. updater.php は `.update_token` の有無を自動判別する設計なので、削除しなくても動作する
 
+## 文字数・本文サイズの実運用ガイド
+
+メール本文は基本的に `post_max_size`（PHP 既定 8M）の範囲内であれば送信可能ですが、
+**実運用では受信側 MTA（多くは 10〜25MB）が先に効きます**。HTML メールマガジンの
+推奨上限は概ね **100KB 以内**（画像はインライン埋め込みではなく URL 参照を推奨）。
+
+### サイズ別の挙動（XAMPP / PHP 8.2 / Apache 検証）
+
+- ～ 1 MB: 即時送信、品質最良
+- 1 〜 5 MB: 送信は通るが MTA 側で弾かれる可能性あり
+- 5 〜 30 MB: PHP `mail()` の単発 SMTP 処理が数十秒〜数分。タイムアウトリスクあり
+- 30 MB 超 (post_max_size 超過): `send.php?err=post_too_large` で送信前に拒否
+
+### `post_max_size` を上げる場合
+
+- `php.ini`: `post_max_size = 32M` （`memory_limit` は post_max_size の 2 倍以上推奨）
+- 共用ホストの場合: `.user.ini` または `.htaccess` (`php_value post_max_size 32M`)
+
+### `send_exec.php` の保護機構
+
+post_max_size 超過時は `?err=post_too_large` リダイレクトが**ゲートウェイレベルで作動**
+（`Expect: 100-continue` ハンドシェイクで本体送信前に拒否）。送信ボタン押下後、フォーム
+画面に戻り「送信内容が大きすぎます。本文を短くしてください」のエラー表示。
+
 ## 障害時の対処
 
 ### 秘密鍵を紛失した場合
