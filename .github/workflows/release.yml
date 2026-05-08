@@ -17,7 +17,7 @@ jobs:
       contents: write  # gh release create のため
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Validate VERSION matches tag
         run: |
