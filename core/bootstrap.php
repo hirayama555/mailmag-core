@@ -5,11 +5,20 @@ declare(strict_types=1);
 // core/bootstrap.php
 // クライアントの薄いシェルから最初に1度だけ require される。
 // 役割:
-//   1. CORE_DIR / CORE_*_DIR の定義
-//   2. ランタイム既定値（タイムゾーン・エンコーディング）
-//   3. クライアント config.php が省略した場合の既定値
-//   4. クラス群の autoload 登録
+//   1. PHP バージョン下限チェック（7.4 未満は明示的に 500 を返す）
+//   2. CORE_DIR / CORE_*_DIR の定義
+//   3. ランタイム既定値（タイムゾーン・エンコーディング）
+//   4. クライアント config.php が省略した場合の既定値
+//   5. クラス群の autoload 登録
 // ============================================================
+
+// PHP バージョン下限チェック（mailmag-core は PHP 7.4 以上が必須）
+// 将来 PHP 7.3 以下に設置された場合、parse error で白画面化する前に
+// 明示的なメッセージで失敗させる。
+if (PHP_VERSION_ID < 70400) {
+    http_response_code(500);
+    exit('mailmag-core requires PHP 7.4 or later. Current: ' . PHP_VERSION);
+}
 
 // クライアント側 config.php が先に require されている前提
 if (!defined('BASE_DIR') || !defined('DATA_DIR')) {

@@ -15,12 +15,12 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     $val  = trim((string)ini_get('post_max_size'));
     $last = strtolower($val[-1] ?? '');
     $num  = (int)$val;
-    $max  = match ($last) {
-        'g'     => $num * 1073741824,
-        'm'     => $num * 1048576,
-        'k'     => $num * 1024,
-        default => $num,
-    };
+    switch ($last) {
+        case 'g': $max = $num * 1073741824; break;
+        case 'm': $max = $num * 1048576;    break;
+        case 'k': $max = $num * 1024;       break;
+        default:  $max = $num;              break;
+    }
     if (empty($_POST) && $contentLength > $max) {
         header('Location: ' . SITE_URL . 'send.php?err=post_too_large');
         exit;

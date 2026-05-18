@@ -2,6 +2,18 @@
 
 本プロジェクトの注目すべき変更点をまとめます。フォーマットは [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/) に準拠し、バージョニングは [SemVer](https://semver.org/lang/ja/) に従います。
 
+## [1.1.2] - 2026-05-18
+
+### Fixed
+- **`core/app/send_exec.php`: `match` 式 (PHP 8.0+) を `switch` 文に置換し PHP 7.4 互換を回復。**
+  - PHP 7.x 環境で `T_DOUBLE_ARROW` ParseError により送信処理が無音で失敗していた問題を修正。
+  - 本番事例: sky7400.com (PHP 7.x) で `send_exec.php` が `HTTP 200 / Content-Length 0` の白画面となり、メール送信が機能しなかった。
+  - `bootstrap.php` の `set_exception_handler` が ParseError を `data/error.log` に書き出していたため原因特定に至った（診断ログ設計は正しく機能した）。
+
+### Added
+- **`core/bootstrap.php`: PHP バージョン下限チェック (`PHP_VERSION_ID < 70400`) を冒頭に追加。**
+  - 将来 PHP 7.3 以下の環境に設置された場合、parse error で黙って失敗するのではなく `mailmag-core requires PHP 7.4 or later.` を明示的に返す。
+
 ## [1.1.1] - 2026-05-18
 
 ### Fixed
