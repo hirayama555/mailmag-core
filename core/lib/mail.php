@@ -43,7 +43,8 @@ final class Mailer
         $fromEmail = (string)($this->admin['from_email'] ?? '');
         $replyTo   = (string)($this->admin['reply_to']   ?? $fromEmail);
 
-        if ($fromEmail === '' || preg_match('/[\r\n]/', $fromEmail) || preg_match('/[\r\n]/', $replyTo)) {
+        if ($fromEmail === '' || !filter_var($fromEmail, FILTER_VALIDATE_EMAIL) ||
+            preg_match('/[\r\n]/', $fromEmail) || preg_match('/[\r\n]/', $replyTo)) {
             return false;
         }
 
@@ -97,7 +98,12 @@ final class Mailer
             $headers .= "List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n";
         }
 
-        return mail($to, $encodedSubject, $body, $headers);
+        // Envelope-From を明示し、SPF alignment（DMARC pass）を成立させる。
+        // $fromEmail は FILTER_VALIDATE_EMAIL + CR/LF チェック済み。
+        // 万一の混入に備え escapeshellarg で防御を多層化。
+        $additionalParams = '-f' . escapeshellarg($fromEmail);
+
+        return mail($to, $encodedSubject, $body, $headers, $additionalParams);
     }
 
     /**
