@@ -43,9 +43,15 @@ mailmag-core/
 
 ## バージョン
 
-最新リリース: [**v1.1.0**](https://github.com/hirayama555/mailmag-core/releases/latest)（HTMLメール送信機能を含む）
+最新リリース: [**v1.1.2**](https://github.com/hirayama555/mailmag-core/releases/latest)（PHP 7.4 互換性回復 + 配信元 Envelope-From 強化）
 
 各クライアントの稼働バージョンは `core/VERSION` で確認できます。
+
+直近の主な変更点:
+
+- **v1.1.2** — `core/app/send_exec.php` の `match` 式を `switch` に置換し PHP 7.4 で動作するように修正。`core/bootstrap.php` に PHP バージョン下限チェックを追加。
+- **v1.1.1** — `Mailer::send()` で Envelope-From (`-f`) を明示し、SPF alignment / DMARC pass を可能化。Gmail の 550-5.7.26 拒否を回避。
+- **v1.1.0** — HTML メール送信機能（`multipart/alternative`）、HTML テンプレ保存、履歴詳細での HTML ソース表示。
 
 ## ドキュメント
 
@@ -61,8 +67,11 @@ mailmag-core/
 - [x] **Phase 3**: GitHub Actions による Release ビルド + Ed25519 署名
 - [x] **Phase 4**: E2E メルマガ配信テスト
 - [x] **HTMLメール送信機能**（v1.1.0、`multipart/alternative` / テンプレ保存 / 履歴詳細表示）
+- [x] **配信元 Envelope-From 強化**（v1.1.1、SPF alignment / DMARC pass を可能に）
+- [x] **PHP 7.4 互換性回復**（v1.1.2、共有レンタルサーバでの動作担保）
+- [x] **リポジトリ public 化**（クライアント側 PAT 運用が不要に）
 
 ### 検討中
 
-- [ ] リポジトリ public 化（クライアント側の PAT 運用を不要化）
 - [ ] 既存環境（acmailer 等）からの移行手順整備
+- [ ] DKIM 署名対応（現状は SPF alignment 単独で DMARC pass を狙う設計）
