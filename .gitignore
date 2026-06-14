@@ -26,5 +26,15 @@ Thumbs.db
 *.key
 .env
 .env.local
-.aidesigner/*
-!.aidesigner/.gitkeep
+.aidesigner/
+
+# Release artifacts (signature uploaded to GitHub Releases, not committed)
+*.zip.sig
+
+# Local development tools & IDE configs
+.agents/
+.claude/
+.mcp.json
+
+# Local test deployment (client-template-test is a local copy for testing)
+client-template-test/
