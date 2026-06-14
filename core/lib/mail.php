@@ -83,9 +83,12 @@ final class Mailer
             $contentType = 'text/plain; charset=UTF-8';
         }
 
-        $encodedSubject  = '=?UTF-8?B?' . base64_encode($subject) . '?=';
+        // mb_encode_mimeheader は RFC 2047 の 75 byte/行制限に従って自動折返しする。
+        // 手書きの '=?UTF-8?B?...?=' は長い件名で制限を超え、MTA が折返しを誤る恐れがある。
+        // mb_internal_encoding('UTF-8') は bootstrap.php で設定済み。
+        $encodedSubject  = mb_encode_mimeheader($subject, 'UTF-8', 'B', "\r\n");
         $encodedFromName = $fromName !== ''
-            ? ('=?UTF-8?B?' . base64_encode($fromName) . '?= <' . $fromEmail . '>')
+            ? (mb_encode_mimeheader($fromName, 'UTF-8', 'B', "\r\n") . ' <' . $fromEmail . '>')
             : $fromEmail;
 
         $headers  = "From: {$encodedFromName}\r\n";

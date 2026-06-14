@@ -2,6 +2,24 @@
 
 本プロジェクトの注目すべき変更点をまとめます。フォーマットは [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/) に準拠し、バージョニングは [SemVer](https://semver.org/lang/ja/) に従います。
 
+## [1.1.3] - 2026-06-14
+
+### Security
+- **`core/lib/file_db.php`: `writeJson()` を tmp ファイル + `rename` の原子的書き込みに変更。**
+  - 従来は `fopen($path, 'w')` が `flock` 取得前にファイルを 0 バイト切り詰めるため、書き込み中のクラッシュ／プロセス kill で `admin.json` 等が空になりログイン不能に陥るリスクがあった。同一 FS 上の `rename` は原子的なので、読み手は常に旧／新どちらか完全な状態のみを見る。
+- **`core/lib/updater.php`: zip 展開前に全エントリ名を検査する Zip Slip 多層防御を追加。**
+  - 署名検証済み zip のみ展開する設計だが、万一署名鍵が漏洩した場合に備え `..` / NUL / 絶対パス / ドライブ指定を含むエントリを `extractTo()` 前に拒否する。
+- **`core/lib/auth.php`: セッション Cookie の `secure` 判定を堅牢化。**
+  - `isset($_SERVER['HTTPS'])` のみだと (a) リバースプロキシ配下で落ちる (b) IIS の `HTTPS='off'` でも true になる弱点があった。`isHttps()` を新設し、TLS 終端／`X-Forwarded-Proto`／443 ポートのいずれにも対応。HTTP のみ環境では false のままなのでログイン不能化しない。
+
+### Fixed
+- **`core/lib/mail.php`: 件名・差出人名の MIME エンコードを `mb_encode_mimeheader()` に変更。**
+  - 手書きの `=?UTF-8?B?...?=` は RFC 2047 の 75 byte/行制限を無視しており、長い件名で MTA が折返しを誤る恐れがあった。
+
+### Changed
+- **`core/lib/file_db.php`: 未使用の `addSubscriber()` に `@deprecated` 注記を追加**（後継は `addSubscriberIfNew()`）。
+- **ドキュメント整合**: `HANDOVER.md` の Phase 表・残タスクを v1.1.3 稼働中の現況に更新。`docs/INSTALL.md` の「Phase 2 で予定」を自動更新の `cron_queue.php` 相乗り実装済みの記述に修正。`docs/UPGRADE.md` をスタブから実装フロー（署名検証→展開→原子的差替え→ロールバック）の確定記述へ全面書き換え。
+
 ## [1.1.2] - 2026-05-18
 
 ### Fixed

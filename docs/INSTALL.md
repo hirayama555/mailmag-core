@@ -95,7 +95,7 @@ define('SITE_URL', 'https://your-domain.com/mailmag/');
 
 ## 4. core/ ディレクトリのインストール
 
-Phase 2 で自動更新スクリプトが提供される予定ですが、初回は手動で `core.zip` を展開してください:
+自動更新は導入後 `cron_queue.php` に相乗りして動作します（後述）。ただし初回のみ手動で `core.zip` を展開してください:
 
 ```bash
 # サーバー上で
@@ -106,7 +106,7 @@ unzip core.zip -d ./
 rm core.zip
 ```
 
-> Phase 2 完了後は `cron_update.php` が自動的にこの作業を行うようになります。
+> 2回目以降のバージョン更新は、下記 Cron 設定後に `cron_queue.php` が自動的にこの作業を行います（手動展開は不要）。
 
 ## 5. 初期セットアップ
 
@@ -133,8 +133,11 @@ rm core.zip
 */5 * * * * /usr/local/bin/php /path/to/mailmag/cron_queue.php
 ```
 
-> Phase 2 で自動更新用の `cron_update.php` も追加予定:
+> 自動更新は上記 `cron_queue.php` に相乗りで組み込み済みです（24時間に1回チェック）。
+> **更新専用の cron 行を追加する必要はありません。**
+> 任意で更新だけを独立して回したい場合は `cron_update.php` も利用できますが、通常は不要です:
 > ```cron
+> # （任意）更新チェックを独立実行したい場合のみ
 > 0 0 * * * /usr/local/bin/php /path/to/mailmag/cron_update.php
 > ```
 

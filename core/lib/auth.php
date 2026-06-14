@@ -15,12 +15,33 @@ final class Auth
             session_set_cookie_params([
                 'lifetime' => SESSION_LIFETIME,
                 'path'     => '/',
-                'secure'   => isset($_SERVER['HTTPS']),
+                'secure'   => self::isHttps(),
                 'httponly' => true,
                 'samesite' => 'Strict',
             ]);
             session_start();
         }
+    }
+
+    /**
+     * HTTPS 接続かどうかを判定する。
+     * 直接 TLS 終端 / リバースプロキシ配下 / 443 ポートのいずれにも対応。
+     * isset($_SERVER['HTTPS']) だけだと (a) プロキシ配下で落ちる
+     * (b) IIS の HTTPS='off' でも true になる、という二重の弱点があるため分離。
+     * HTTP のみの環境では false を返すので secure Cookie 化でログイン不能にはならない。
+     */
+    private static function isHttps(): bool
+    {
+        if (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off') {
+            return true;
+        }
+        if (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https') {
+            return true;
+        }
+        if ((string)($_SERVER['SERVER_PORT'] ?? '') === '443') {
+            return true;
+        }
+        return false;
     }
 
     public static function isLoggedIn(): bool

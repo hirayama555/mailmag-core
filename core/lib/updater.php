@@ -226,6 +226,21 @@ final class Updater
         if ($zip->open($zipPath) !== true) {
             throw new RuntimeException('zip 展開失敗');
         }
+
+        // Zip Slip 多層防御: 署名検証済み zip のみ展開する設計だが、万一署名鍵が
+        // 漏洩した場合に備え、展開前に全エントリ名を検査してパストラバーサルを弾く。
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $name = $zip->getNameIndex($i);
+            if ($name === false) continue;
+            if (strpos($name, "\0") !== false
+                || strpos($name, '..') !== false
+                || $name[0] === '/'
+                || preg_match('#^[A-Za-z]:#', $name)) {
+                $zip->close();
+                throw new RuntimeException('Zip Slip 検出: ' . $name);
+            }
+        }
+
         if (!@mkdir($stageDir, 0755, true)) {
             $zip->close();
             throw new RuntimeException('stage ディレクトリ作成失敗');

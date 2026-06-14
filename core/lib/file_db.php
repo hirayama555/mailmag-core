@@ -50,6 +50,10 @@ final class FileDB
         return $rows;
     }
 
+    /**
+     * @deprecated findByEmail→addSubscriber の二段呼び出しには race window があるため使用しない。
+     *             重複チェック込みの原子的登録は addSubscriberIfNew()（modifyCsvAtomic 経由）を使うこと。
+     */
     public static function addSubscriber(array $sub): bool
     {
         $path = DATA_DIR . '/subscribers.csv';
@@ -476,12 +480,29 @@ final class FileDB
     {
         $dir = dirname($path);
         if (!is_dir($dir)) @mkdir($dir, 0755, true);
-        $fp = fopen($path, 'w');
+
+        // tmp ファイルへ全量書き込み → rename で差し替え。
+        // fopen('w') は flock 取得前にファイルを 0 バイト切り詰めるため、
+        // 書き込み中のクラッシュ/kill で JSON が空になる事故を避ける。
+        // 同一 FS 上の rename は原子的（POSIX）なので、読み手は常に
+        // 旧内容か新内容のどちらか完全な状態のみを見る。
+        $json = (string)json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        $tmp  = $path . '.tmp.' . getmypid() . '.' . bin2hex(random_bytes(4));
+
+        $fp = @fopen($tmp, 'wb');
         if (!$fp) return false;
-        flock($fp, LOCK_EX);
-        fwrite($fp, (string)json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
-        flock($fp, LOCK_UN);
+        if (fwrite($fp, $json) === false) {
+            fclose($fp);
+            @unlink($tmp);
+            return false;
+        }
+        fflush($fp);
         fclose($fp);
+
+        if (!@rename($tmp, $path)) {
+            @unlink($tmp);
+            return false;
+        }
         return true;
     }
 }
