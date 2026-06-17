@@ -43,6 +43,7 @@ function saveSendDraft(): void
         'body'          => trim($_POST['body']       ?? ''),
         'html_body'     => trim($_POST['html_body']  ?? ''),
         'html_mode'     => !empty($_POST['html_mode']),
+        'open_tracking' => !empty($_POST['open_tracking']),
         'test_email'    => trim($_POST['test_email'] ?? ''),
         'schedule_type' => $_POST['schedule_type'] ?? 'now',
         'scheduled_at'  => $_POST['scheduled_at']  ?? '',
@@ -81,8 +82,9 @@ if ($sendMode === 'test') {
 }
 
 // ========== 本送信 or 予約 ==========
-$scheduleType = $_POST['schedule_type'] ?? 'now';
-$scheduledAt  = $_POST['scheduled_at']  ?? '';
+$scheduleType  = $_POST['schedule_type'] ?? 'now';
+$scheduledAt   = $_POST['scheduled_at']  ?? '';
+$openTracking  = !empty($_POST['open_tracking']);
 
 // 予約送信の日時バリデーション
 // strtotime() は不正な文字列で false を返し、(int)false = 0 となり
@@ -123,6 +125,7 @@ $queue = [
     'sent_count'   => 0,
     'success_count'=> 0,
     'offset'       => 0,
+    'open_tracking'=> $openTracking,
     'status'       => $scheduleType === 'reserve' ? 'reserved' : 'pending',
     'scheduled_at' => $scheduleType === 'reserve'
                       ? date('Y-m-d H:i:s', (int)strtotime($scheduledAt))
@@ -140,6 +143,7 @@ FileDB::addHistory([
     'html_body'     => $htmlBody,
     'total_count'   => count($subs),
     'success_count' => 0,
+    'open_tracking' => $openTracking,
     'status'        => $scheduleType === 'reserve' ? 'reserved' : 'sending',
     'scheduled_at'  => $queue['scheduled_at'],
     'sent_at'       => $now,

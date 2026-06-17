@@ -363,6 +363,58 @@ final class FileDB
         return self::addHistory($h);
     }
 
+    // ---- 開封トラッキング（追記専用ログ）------------------
+
+    /**
+     * 開封を1件記録する。data/opens/<queueId>.log に
+     * 「日時<TAB>subId」を追記する（FILE_APPEND|LOCK_EX で同時書き込み安全）。
+     * 集計は getOpenStats() が行うため、ここでは重複排除しない（延べを保持）。
+     */
+    public static function recordOpen(string $queueId, string $subId): void
+    {
+        $safeId = preg_replace('/[^a-zA-Z0-9_\-]/', '', $queueId);
+        if ($safeId === '' || $subId === '') return;
+
+        if (!is_dir(OPENS_DIR)) @mkdir(OPENS_DIR, 0755, true);
+
+        // subId 内のタブ・改行は記録を壊すので除去（subId は通常 UUID/英数）
+        $cleanSub = str_replace(["\t", "\r", "\n"], '', $subId);
+        $line = date('Y-m-d H:i:s') . "\t" . $cleanSub . PHP_EOL;
+        @file_put_contents(OPENS_DIR . '/' . $safeId . '.log', $line, FILE_APPEND | LOCK_EX);
+    }
+
+    /**
+     * 指定キューの開封統計を返す。
+     * @return array{unique:int, total:int}
+     *   unique = 開封したユニーク購読者数 / total = 延べ開封回数
+     */
+    public static function getOpenStats(string $queueId): array
+    {
+        $safeId = preg_replace('/[^a-zA-Z0-9_\-]/', '', $queueId);
+        $path   = OPENS_DIR . '/' . $safeId . '.log';
+        if ($safeId === '' || !is_file($path)) {
+            return ['unique' => 0, 'total' => 0];
+        }
+
+        $total   = 0;
+        $seen    = [];
+        $fp = @fopen($path, 'r');
+        if (!$fp) return ['unique' => 0, 'total' => 0];
+        flock($fp, LOCK_SH);
+        while (($line = fgets($fp)) !== false) {
+            $line = rtrim($line, "\r\n");
+            if ($line === '') continue;
+            $total++;
+            $parts = explode("\t", $line);
+            $subId = $parts[1] ?? '';
+            if ($subId !== '') $seen[$subId] = true;
+        }
+        flock($fp, LOCK_UN);
+        fclose($fp);
+
+        return ['unique' => count($seen), 'total' => $total];
+    }
+
     // ---- 送信キュー JSON ----------------------------------
 
     public static function getQueueList(): array

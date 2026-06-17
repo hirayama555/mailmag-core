@@ -21,9 +21,13 @@ if (!empty($_GET['history_id'])) {
 
 // テスト送信・入力エラー後のフォーム復元（PRG で消えた入力をセッションから復旧）。
 // 復元したらすぐ破棄（ワンタイム）。ブラウザ更新で古い下書きが蒸し返さないようにする。
-$draftTestEmail    = '';
-$draftScheduleType = 'now';
-$htmlModeChecked   = !empty($prefill['html_body']);
+$draftTestEmail      = '';
+$draftScheduleType   = 'now';
+$htmlModeChecked     = !empty($prefill['html_body']);
+// 開封計測は既定 ON。履歴からの再送時は元の選択を踏襲する。
+$openTrackingChecked = array_key_exists('open_tracking', $prefill)
+    ? !empty($prefill['open_tracking'])
+    : true;
 if (!empty($_SESSION['send_draft'])) {
     $draft = $_SESSION['send_draft'];
     unset($_SESSION['send_draft']);
@@ -32,6 +36,7 @@ if (!empty($_SESSION['send_draft'])) {
     $prefill['html_body']    = $draft['html_body']    ?? '';
     $prefill['scheduled_at'] = $draft['scheduled_at'] ?? '';
     $htmlModeChecked         = !empty($draft['html_mode']);
+    $openTrackingChecked     = !empty($draft['open_tracking']);
     $draftTestEmail          = $draft['test_email']    ?? '';
     $draftScheduleType       = $draft['schedule_type'] ?? 'now';
 }
@@ -133,6 +138,18 @@ require_once CORE_INCLUDES_DIR . '/header.php';
                                 HTML 本文が空の場合はテキストのみで送信されます。
                             </p>
                         </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" id="open_tracking" name="open_tracking" value="1"
+                                   <?= $openTrackingChecked ? 'checked' : '' ?>>
+                            開封を計測する
+                        </label>
+                        <p class="form-hint">
+                            HTMLメールに 1×1 の透明画像を埋め込み、開封率を計測します。<br>
+                            ※ HTMLメール送信時のみ有効。受信側の画像ブロック等により実数とずれる目安値です。
+                        </p>
                     </div>
                 </div>
             </div>

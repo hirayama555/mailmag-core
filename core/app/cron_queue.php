@@ -104,6 +104,16 @@ foreach ($batchIds as $subId) {
     $body        = Mailer::replacePlaceholders($queue['body'], $sub);
     $queueHtml   = $queue['html_body'] ?? '';
     $htmlBodyOut = $queueHtml !== '' ? Mailer::replacePlaceholders($queueHtml, $sub) : '';
+
+    // 開封トラッキング: フラグONかつHTML本文ありのとき、受信者ごとの
+    // 1×1 透明ピクセルを末尾に付加する（テキストのみ送信には付かない）。
+    if (!empty($queue['open_tracking']) && $htmlBodyOut !== '') {
+        $trackUrl = SITE_URL . 'open.php?q=' . rawurlencode($queue['id'])
+                  . '&t=' . rawurlencode($sub['token']);
+        $htmlBodyOut .= '<img src="' . htmlspecialchars($trackUrl, ENT_QUOTES, 'UTF-8')
+                      . '" width="1" height="1" alt="" style="display:none;border:0;">';
+    }
+
     $result      = $mailer->send($sub['email'], $queue['subject'], $body, $htmlBodyOut, $unsubUrl);
 
     if ($result) {

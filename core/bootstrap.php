@@ -48,6 +48,7 @@ defined('SESSION_LIFETIME')or define('SESSION_LIFETIME', 3600);
 defined('HISTORY_DIR') or define('HISTORY_DIR', DATA_DIR . '/history');
 defined('QUEUE_DIR')   or define('QUEUE_DIR',   DATA_DIR . '/send_queue');
 defined('PENDING_DIR') or define('PENDING_DIR', DATA_DIR . '/pending');
+defined('OPENS_DIR')   or define('OPENS_DIR',   DATA_DIR . '/opens');
 defined('LOCK_DIR')    or define('LOCK_DIR',    DATA_DIR . '/locks');
 defined('RATELIMIT_DIR') or define('RATELIMIT_DIR', DATA_DIR . '/rate_limit');
 

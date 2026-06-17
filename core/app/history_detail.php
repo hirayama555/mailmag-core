@@ -20,6 +20,14 @@ $statusMap = [
 ];
 $info = $statusMap[$h['status']] ?? ['label' => $h['status'], 'badge' => 'badge-muted'];
 
+// 開封トラッキング統計（このキャンペーンで計測ONだった場合のみ）
+$openTracking = !empty($h['open_tracking']);
+$openStats    = $openTracking ? FileDB::getOpenStats($id) : ['unique' => 0, 'total' => 0];
+$successCount = (int)($h['success_count'] ?? 0);
+$openRate     = ($openTracking && $successCount > 0)
+    ? round($openStats['unique'] / $successCount * 100, 1)
+    : 0.0;
+
 $pageTitle = '送信履歴詳細';
 $activeNav = 'history';
 require_once CORE_INCLUDES_DIR . '/header.php';
@@ -62,12 +70,24 @@ require_once CORE_INCLUDES_DIR . '/header.php';
                     <tr><td class="text-muted" style="padding:6px 0;">対象数</td>
                         <td><?= number_format((int)($h['total_count'] ?? 0)) ?> 件</td></tr>
                     <tr><td class="text-muted" style="padding:6px 0;">成功</td>
-                        <td><?= number_format((int)($h['success_count'] ?? 0)) ?> 件</td></tr>
+                        <td><?= number_format($successCount) ?> 件</td></tr>
+                    <?php if ($openTracking): ?>
+                    <tr><td class="text-muted" style="padding:6px 0;">開封（ユニーク）</td>
+                        <td><?= number_format($openStats['unique']) ?> 件</td></tr>
+                    <tr><td class="text-muted" style="padding:6px 0;">開封率</td>
+                        <td><?= $openRate ?>%</td></tr>
+                    <?php endif; ?>
                     <tr><td class="text-muted" style="padding:6px 0;">開始日時</td>
                         <td style="font-size:12px;"><?= htmlspecialchars(substr($h['sent_at'] ?? '', 0, 16), ENT_QUOTES, 'UTF-8') ?></td></tr>
                     <tr><td class="text-muted" style="padding:6px 0;">完了日時</td>
                         <td style="font-size:12px;"><?= !empty($h['finished_at']) ? htmlspecialchars(substr($h['finished_at'], 0, 16), ENT_QUOTES, 'UTF-8') : '—' ?></td></tr>
                 </table>
+                <?php if ($openTracking): ?>
+                <p class="text-muted" style="font-size:11px;margin-top:10px;line-height:1.6;">
+                    ※ 開封率は受信側の画像ブロックやプライバシー保護機能の影響で
+                    実際とずれる目安値です（延べ開封 <?= number_format($openStats['total']) ?> 回）。
+                </p>
+                <?php endif; ?>
             </div>
         </div>
 
