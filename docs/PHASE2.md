@@ -189,8 +189,15 @@ DMARC=pass を狙えるか」を未来の開発者向けに記録する。
 | 軸 | 採用状況 | 理由 |
 |---|---|---|
 | SPF alignment | **必須**。`-f` で Envelope-From を From: と同一ドメインに揃える | レンタルサーバの `mail()` でも DNS 整備のみで実現可能 |
-| DKIM 署名 | 任意（共有レンタルサーバでは多くの場合不可） | サーバ側に OpenDKIM 等が必要。クライアントに要求するのは現実的でない |
-| DMARC=pass | SPF alignment 単独で成立する設計 | DMARC は SPF または DKIM のどちらか片方 alignment で pass する仕様 |
+| DKIM 署名 | **v1.1.4 で対応**（SMTP Auth 送信を選択した場合） | カゴヤ・シン等は「SMTP 認証経由の送信のみ DKIM 署名」する。`mail()` ではなく SMTP で送れば OpenDKIM 不要でクライアントが利用できる |
+| DMARC=pass | SPF alignment 単独でも成立。SMTP+DKIM ならさらに堅牢 | DMARC は SPF または DKIM のどちらか片方 alignment で pass する仕様 |
+
+> **v1.1.4 の方針転換**: 当初「DKIM は共有レンタルサーバでは不可」と判断していたが、
+> 実際にはカゴヤ・シン・レンタルサーバー等が「SMTP 認証経由の送信のみ DKIM 署名する」
+> 仕組みを提供していると判明。`mail()` はこの対象外だったため DKIM が付かなかった。
+> `core/lib/smtp.php`（v1.1.4 新設）で SMTP Auth 送信を行うことで、サーバー側 DKIM 署名を
+> クライアント自身が有効化できるようになった。設定は管理画面 →「SMTP送信設定（DKIM署名対応）」。
+> 詳細手順は [INSTALL.md の「DKIM 署名」](INSTALL.md) を参照。
 
 ### コード側の実装ポイント（v1.1.1 で完成）
 

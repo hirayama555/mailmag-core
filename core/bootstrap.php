@@ -63,6 +63,8 @@ spl_autoload_register(function (string $class): void {
         'Auth'         => 'auth.php',
         'Token'        => 'token.php',
         'Mailer'       => 'mail.php',
+        'SmtpClient'   => 'smtp.php',
+        'SmtpException'=> 'smtp.php',
         'Lock'         => 'lock.php',
         'RateLimit'    => 'rate_limit.php',
         'Uuid'         => 'uuid.php',

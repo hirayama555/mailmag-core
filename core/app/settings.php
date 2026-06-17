@@ -3,9 +3,11 @@ declare(strict_types=1);
 
 Auth::requireLogin();
 
-$admin   = FileDB::getAdmin();
-$success = false;
-$error   = '';
+$admin       = FileDB::getAdmin();
+$success     = false;
+$error       = '';
+$smtpTestOk  = false;
+$smtpTestMsg = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!Token::verifyCsrf($_POST['csrf_token'] ?? '')) {
@@ -37,8 +39,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $admin['send_interval']  = max(0, min(5, (float)($p['send_interval'] ?? 0.1)));
             $admin['footer_text']    = $p['footer_text'] ?? '';
 
+            // ----- SMTP送信設定（DKIM署名対応）-----
+            $admin['smtp_enabled'] = !empty($p['smtp_enabled']);
+            $admin['smtp_host']    = trim($p['smtp_host'] ?? '');
+            $admin['smtp_port']    = max(1, min(65535, (int)($p['smtp_port'] ?? 587)));
+            $admin['smtp_user']    = trim($p['smtp_user'] ?? '');
+            $admin['smtp_secure']  = in_array(($p['smtp_secure'] ?? 'tls'), ['tls', 'ssl', ''], true)
+                ? (string)$p['smtp_secure']
+                : 'tls';
+            // パスワードは入力された場合のみ更新（管理者パスワードと同方式）
+            if (!empty($p['smtp_pass'])) {
+                $admin['smtp_pass'] = (string)$p['smtp_pass'];
+            }
+
             FileDB::saveAdmin($admin);
             $success = true;
+
+            // SMTP有効時は保存直後に接続テストを行い、即フィードバックする
+            if ($admin['smtp_enabled']) {
+                try {
+                    $test = new SmtpClient(
+                        (string)$admin['smtp_host'],
+                        (int)$admin['smtp_port'],
+                        (string)$admin['smtp_user'],
+                        (string)($admin['smtp_pass'] ?? ''),
+                        (string)$admin['smtp_secure']
+                    );
+                    $test->connect();
+                    $test->close();
+                    $smtpTestOk = true;
+                } catch (SmtpException $e) {
+                    $smtpTestMsg = $e->getMessage();
+                }
+            }
         }
     }
 }
@@ -50,6 +83,14 @@ require_once CORE_INCLUDES_DIR . '/header.php';
 
 <?php if ($success): ?>
     <div class="alert alert-success">設定を保存しました。</div>
+<?php endif; ?>
+<?php if ($success && $smtpTestOk): ?>
+    <div class="alert alert-success">SMTP接続テストに成功しました。DKIM署名付き送信の準備が整いました。</div>
+<?php elseif ($success && $smtpTestMsg !== ''): ?>
+    <div class="alert alert-danger">
+        設定は保存しましたが、<strong>SMTP接続テストに失敗</strong>しました:<br>
+        <?= htmlspecialchars($smtpTestMsg, ENT_QUOTES, 'UTF-8') ?>
+    </div>
 <?php endif; ?>
 <?php if ($error): ?>
     <div class="alert alert-danger"><?= htmlspecialchars($error, ENT_QUOTES, 'UTF-8') ?></div>
@@ -143,6 +184,68 @@ require_once CORE_INCLUDES_DIR . '/header.php';
                 メール → メールアドレス → 上記「空メール受信アドレス」を選択 →
                 転送先に <code>/usr/local/bin/php <?= htmlspecialchars(BASE_DIR, ENT_QUOTES, 'UTF-8') ?>/register_mail.php</code> を設定
             </div>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header"><h2>SMTP送信設定（DKIM署名対応）</h2></div>
+        <div class="card-body">
+            <div class="alert alert-info">
+                <strong>DKIM署名を有効にするにはSMTP送信が必要です。</strong><br>
+                多くのレンタルサーバー（カゴヤ・シン・レンタルサーバー等）は、
+                <strong>SMTP認証を経由した送信のみDKIM署名を付与</strong>します。
+                PHP標準の <code>mail()</code> 送信ではDKIMが付かず、Gmail等で迷惑メール判定されやすくなります。<br>
+                有効化後、サーバー管理画面でDKIMの「署名付与」をONにしてください。
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">
+                    <input type="checkbox" name="smtp_enabled" value="1"
+                        <?= !empty($admin['smtp_enabled']) ? 'checked' : '' ?>>
+                    SMTP送信を有効にする
+                </label>
+                <p class="form-hint">オフの場合はPHP標準の <code>mail()</code> で送信します（DKIMなし）</p>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">SMTPホスト</label>
+                    <input type="text" name="smtp_host" class="form-control"
+                           placeholder="例: mss-vl-765.kagoya.net / svXXXX.xserver.jp"
+                           value="<?= htmlspecialchars($admin['smtp_host'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
+                    <p class="form-hint">サーバーのメール送信(SMTP)サーバー名</p>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">ポート / 暗号化</label>
+                    <div class="form-row">
+                        <input type="number" name="smtp_port" class="form-control" min="1" max="65535"
+                               value="<?= (int)($admin['smtp_port'] ?? 587) ?>" style="max-width:120px;">
+                        <select name="smtp_secure" class="form-control">
+                            <?php $sec = $admin['smtp_secure'] ?? 'tls'; ?>
+                            <option value="tls" <?= $sec === 'tls' ? 'selected' : '' ?>>STARTTLS (587)</option>
+                            <option value="ssl" <?= $sec === 'ssl' ? 'selected' : '' ?>>SSL/TLS (465)</option>
+                            <option value=""    <?= $sec === ''    ? 'selected' : '' ?>>暗号化なし（非推奨）</option>
+                        </select>
+                    </div>
+                    <p class="form-hint">587=STARTTLS、465=SSL が一般的</p>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">SMTPユーザー名</label>
+                    <input type="text" name="smtp_user" class="form-control" autocomplete="off"
+                           placeholder="通常は送信元メールアドレス"
+                           value="<?= htmlspecialchars($admin['smtp_user'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">SMTPパスワード</label>
+                    <input type="password" name="smtp_pass" class="form-control" autocomplete="new-password"
+                           placeholder="<?= !empty($admin['smtp_pass']) ? '設定済み（変更時のみ入力）' : 'メールアカウントのパスワード' ?>">
+                    <p class="form-hint">変更しない場合は空欄。<code>data/</code> 内に保存されます（.htaccess で保護）</p>
+                </div>
+            </div>
+            <p class="form-hint">設定を保存すると自動でSMTP接続テストを行います。</p>
         </div>
     </div>
 

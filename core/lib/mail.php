@@ -14,9 +14,19 @@ final class Mailer
 {
     private array $admin;
 
+    /** SMTP送信時の接続をバッチ間でキープアライブするため保持する */
+    private ?SmtpClient $smtp = null;
+
     public function __construct(array $admin)
     {
         $this->admin = $admin;
+    }
+
+    public function __destruct()
+    {
+        if ($this->smtp !== null) {
+            $this->smtp->close();
+        }
     }
 
     /**
@@ -58,7 +68,9 @@ final class Mailer
 
         $boundary = '----=_MailMag_' . md5(uniqid('', true));
 
-        if ($htmlBody !== '') {
+        $isMultipart = ($htmlBody !== '');
+
+        if ($isMultipart) {
             // HTML パート末尾にエスケープ済みフッターを追加
             $htmlFooter = '<br><hr style="border:none;border-top:1px solid #ccc;margin:20px 0">'
                 . '<p style="font-size:12px;color:#888;">'
@@ -78,8 +90,8 @@ final class Mailer
 
             $contentType = "multipart/alternative; boundary=\"{$boundary}\"";
         } else {
-            // テキストのみ
-            $body        = $textBodyFull;
+            // テキストのみ — base64 encode で UTF-8 文字化けを防ぐ
+            $body        = chunk_split(base64_encode($textBodyFull));
             $contentType = 'text/plain; charset=UTF-8';
         }
 
@@ -94,11 +106,20 @@ final class Mailer
         $headers  = "From: {$encodedFromName}\r\n";
         $headers .= "Reply-To: {$replyTo}\r\n";
         $headers .= "Content-Type: {$contentType}\r\n";
+        if (!$isMultipart) {
+            $headers .= "Content-Transfer-Encoding: base64\r\n";
+        }
         $headers .= "MIME-Version: 1.0\r\n";
         $headers .= "X-Mailer: MailMag/" . MAILMAG_CORE_VERSION . "\r\n";
         if ($listUnsubHeader !== '') {
             $headers .= "List-Unsubscribe: {$listUnsubHeader}\r\n";
             $headers .= "List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n";
+        }
+
+        // SMTP送信が有効なら SMTP Auth 経由で送る（DKIM署名を得るため）。
+        // 無効なら従来どおり mail() を使う（既存クライアントの後方互換）。
+        if ($this->smtpEnabled()) {
+            return $this->sendViaSmtp($to, $encodedSubject, $headers, $body, $fromEmail);
         }
 
         // Envelope-From を明示し、SPF alignment（DMARC pass）を成立させる。
@@ -107,6 +128,71 @@ final class Mailer
         $additionalParams = '-f' . escapeshellarg($fromEmail);
 
         return mail($to, $encodedSubject, $body, $headers, $additionalParams);
+    }
+
+    /**
+     * SMTP送信が設定済みかどうか。
+     */
+    private function smtpEnabled(): bool
+    {
+        return !empty($this->admin['smtp_enabled'])
+            && !empty($this->admin['smtp_host'])
+            && !empty($this->admin['smtp_user']);
+    }
+
+    /**
+     * SMTPクライアントを遅延生成・再利用する（接続キープアライブ）。
+     */
+    private function smtp(): SmtpClient
+    {
+        if ($this->smtp === null) {
+            $this->smtp = new SmtpClient(
+                (string)$this->admin['smtp_host'],
+                (int)($this->admin['smtp_port'] ?? 587),
+                (string)$this->admin['smtp_user'],
+                (string)($this->admin['smtp_pass'] ?? ''),
+                (string)($this->admin['smtp_secure'] ?? 'tls')
+            );
+        }
+        return $this->smtp;
+    }
+
+    /**
+     * SMTP Auth 経由で1通送信する。
+     * mail() と異なり To / Subject / Date / Message-ID も自前でヘッダーに含める。
+     */
+    private function sendViaSmtp(
+        string $to,
+        string $encodedSubject,
+        string $headers,
+        string $body,
+        string $fromEmail
+    ): bool {
+        try {
+            $domainPart = strrchr($fromEmail, '@');
+            $domain     = ($domainPart !== false && strlen($domainPart) > 1)
+                ? substr($domainPart, 1)
+                : 'localhost';
+            $messageId  = '<' . bin2hex(random_bytes(16)) . '@' . $domain . '>';
+
+            // mail() が自動付与していたヘッダーを SMTP では明示する
+            $raw  = "To: {$to}\r\n";
+            $raw .= "Subject: {$encodedSubject}\r\n";
+            $raw .= 'Date: ' . date('r') . "\r\n";
+            $raw .= "Message-ID: {$messageId}\r\n";
+            $raw .= $headers;        // From / Reply-To / Content-Type / MIME-Version 等
+            $raw .= "\r\n";          // ヘッダーと本文の境界
+            $raw .= $body;
+
+            return $this->smtp()->send($fromEmail, [$to], $raw);
+        } catch (SmtpException $e) {
+            @file_put_contents(
+                DATA_DIR . '/send_error.log',
+                date('[Y-m-d H:i:s] ') . 'SMTP: ' . $e->getMessage() . ' (to: ' . $to . ')' . PHP_EOL,
+                FILE_APPEND | LOCK_EX
+            );
+            return false;
+        }
     }
 
     /**
