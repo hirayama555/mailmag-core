@@ -31,6 +31,24 @@ if (!Token::verifyCsrf($_POST['csrf_token'] ?? '')) {
     die('不正なリクエストです。');
 }
 
+/**
+ * テスト送信・入力エラー後に send.php でフォームを復元するため、
+ * 入力内容をセッションに一時保存する（PRG パターンでの入力消失対策）。
+ * send.php 側で復元後すぐに破棄される（ワンタイム）。
+ */
+function saveSendDraft(): void
+{
+    $_SESSION['send_draft'] = [
+        'subject'       => trim($_POST['subject']    ?? ''),
+        'body'          => trim($_POST['body']       ?? ''),
+        'html_body'     => trim($_POST['html_body']  ?? ''),
+        'html_mode'     => !empty($_POST['html_mode']),
+        'test_email'    => trim($_POST['test_email'] ?? ''),
+        'schedule_type' => $_POST['schedule_type'] ?? 'now',
+        'scheduled_at'  => $_POST['scheduled_at']  ?? '',
+    ];
+}
+
 $admin    = FileDB::getAdmin();
 $mailer   = new Mailer($admin);
 $sendMode = $_POST['send_mode'] ?? 'send';
@@ -39,6 +57,7 @@ $body     = trim($_POST['body']      ?? '');
 $htmlBody = trim($_POST['html_body'] ?? '');
 
 if (!$subject || !$body) {
+    saveSendDraft();
     header('Location: ' . SITE_URL . 'send.php?err=empty');
     exit;
 }
@@ -56,6 +75,7 @@ if ($sendMode === 'test') {
     } else {
         $msg = 'test_invalid';
     }
+    saveSendDraft();
     header('Location: ' . SITE_URL . 'send.php?msg=' . $msg);
     exit;
 }
@@ -70,6 +90,7 @@ $scheduledAt  = $_POST['scheduled_at']  ?? '';
 if ($scheduleType === 'reserve') {
     $ts = strtotime($scheduledAt);
     if ($ts === false || $ts <= time()) {
+        saveSendDraft();
         header('Location: ' . SITE_URL . 'send.php?err=invalid_schedule');
         exit;
     }
@@ -82,6 +103,7 @@ $subs = array_values(array_filter(
 ));
 
 if (empty($subs)) {
+    saveSendDraft();
     header('Location: ' . SITE_URL . 'send.php?err=no_subscribers');
     exit;
 }
@@ -123,6 +145,9 @@ FileDB::addHistory([
     'sent_at'       => $now,
     'finished_at'   => '',
 ]);
+
+// 送信キュー登録に成功したので、一時保存した下書きは破棄する。
+unset($_SESSION['send_draft']);
 
 if ($scheduleType === 'reserve') {
     header('Location: ' . SITE_URL . 'history.php?msg=reserved');

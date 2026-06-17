@@ -43,12 +43,13 @@ mailmag-core/
 
 ## バージョン
 
-最新リリース: [**v1.1.4**](https://github.com/hirayama555/mailmag-core/releases/latest)（SMTP Auth 送信対応 = DKIM 署名対応）
+最新リリース: [**v1.1.5**](https://github.com/hirayama555/mailmag-core/releases/latest)（テスト送信後のフォーム入力保持）
 
 各クライアントの稼働バージョンは `core/VERSION` で確認できます。
 
 直近の主な変更点:
 
+- **v1.1.5** — テスト送信後にフォームの入力（件名・本文・HTML本文・HTMLモード・テスト送信先・送信タイミング・予約日時）が消えてしまう UI バグを修正。PRG リダイレクトをまたいでセッションに一時保存し、`send.php` 再描画時に復元（ワンタイム消費）。入力エラー（件名・本文未入力／予約日時不正／配信対象なし）からの差し戻し時も入力を保持。
 - **v1.1.4** — SMTP Auth 送信に対応（`core/lib/smtp.php` 新設）。レンタルサーバーの DKIM 署名（SMTP 認証経由のみ署名する仕様）を利用可能に。管理画面に SMTP 設定 UI と接続テストを追加。`smtp_enabled` 未設定の既存クライアントは従来どおり `mail()` で送信（後方互換）。テキストのみ送信時の `Content-Transfer-Encoding: base64` 欠落による文字化けも修正。
 - **v1.1.2** — `core/app/send_exec.php` の `match` 式を `switch` に置換し PHP 7.4 で動作するように修正。`core/bootstrap.php` に PHP バージョン下限チェックを追加。
 - **v1.1.1** — `Mailer::send()` で Envelope-From (`-f`) を明示し、SPF alignment / DMARC pass を可能化。Gmail の 550-5.7.26 拒否を回避。

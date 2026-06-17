@@ -19,6 +19,23 @@ if (!empty($_GET['history_id'])) {
     if ($h) { $prefill = $h; }
 }
 
+// テスト送信・入力エラー後のフォーム復元（PRG で消えた入力をセッションから復旧）。
+// 復元したらすぐ破棄（ワンタイム）。ブラウザ更新で古い下書きが蒸し返さないようにする。
+$draftTestEmail    = '';
+$draftScheduleType = 'now';
+$htmlModeChecked   = !empty($prefill['html_body']);
+if (!empty($_SESSION['send_draft'])) {
+    $draft = $_SESSION['send_draft'];
+    unset($_SESSION['send_draft']);
+    $prefill['subject']      = $draft['subject']      ?? '';
+    $prefill['body']         = $draft['body']         ?? '';
+    $prefill['html_body']    = $draft['html_body']    ?? '';
+    $prefill['scheduled_at'] = $draft['scheduled_at'] ?? '';
+    $htmlModeChecked         = !empty($draft['html_mode']);
+    $draftTestEmail          = $draft['test_email']    ?? '';
+    $draftScheduleType       = $draft['schedule_type'] ?? 'now';
+}
+
 // クエリパラメータによるフラッシュメッセージ
 $flashMsg = '';
 $flashType = 'danger';
@@ -99,13 +116,13 @@ require_once CORE_INCLUDES_DIR . '/header.php';
                         <label class="form-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
                             <input type="checkbox" id="html_mode" name="html_mode" value="1"
                                    onchange="toggleHtmlMode(this)"
-                                   <?= !empty($prefill['html_body']) ? 'checked' : '' ?>>
+                                   <?= $htmlModeChecked ? 'checked' : '' ?>>
                             HTMLメールとして送信する
                         </label>
                         <p class="form-hint">チェックすると HTML 本文欄が表示されます。画像は外部URL（&lt;img src="https://..."&gt;）で参照してください。</p>
                     </div>
 
-                    <div id="html_body_group" style="display:<?= !empty($prefill['html_body']) ? 'block' : 'none' ?>;">
+                    <div id="html_body_group" style="display:<?= $htmlModeChecked ? 'block' : 'none' ?>;">
                         <div class="form-group">
                             <label class="form-label">HTML 本文</label>
                             <textarea name="html_body" id="html_body" class="form-control"
@@ -128,7 +145,7 @@ require_once CORE_INCLUDES_DIR . '/header.php';
                     <div class="flex gap-3">
                         <input type="email" name="test_email" class="form-control"
                                placeholder="テスト送信先メールアドレス"
-                               value="<?= htmlspecialchars($admin['admin_email'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
+                               value="<?= htmlspecialchars($draftTestEmail !== '' ? $draftTestEmail : ($admin['admin_email'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
                         <button type="submit" name="send_mode" value="test" class="btn btn-outline">
                             テスト送信
                         </button>
@@ -159,7 +176,8 @@ require_once CORE_INCLUDES_DIR . '/header.php';
                 <div class="card-body">
                     <div class="form-group">
                         <label class="form-label">
-                            <input type="radio" name="schedule_type" value="now" checked
+                            <input type="radio" name="schedule_type" value="now"
+                                   <?= $draftScheduleType !== 'reserve' ? 'checked' : '' ?>
                                    onchange="toggleSchedule(this)">
                             &nbsp;すぐに送信
                         </label>
@@ -167,11 +185,12 @@ require_once CORE_INCLUDES_DIR . '/header.php';
                     <div class="form-group">
                         <label class="form-label">
                             <input type="radio" name="schedule_type" value="reserve"
+                                   <?= $draftScheduleType === 'reserve' ? 'checked' : '' ?>
                                    onchange="toggleSchedule(this)">
                             &nbsp;日時を指定して予約
                         </label>
                     </div>
-                    <div id="schedule_inputs" style="display:none;margin-top:8px;">
+                    <div id="schedule_inputs" style="display:<?= $draftScheduleType === 'reserve' ? 'block' : 'none' ?>;margin-top:8px;">
                         <input type="datetime-local" name="scheduled_at" class="form-control"
                                min="<?= date('Y-m-d\TH:i') ?>"
                                value="<?= htmlspecialchars($prefill['scheduled_at'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
