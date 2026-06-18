@@ -67,11 +67,15 @@ if (preg_match('/^From:\s*(.+)$/mi', $headerPart, $fm)) {
 
         $namePart = trim(preg_replace('/<[^>]+>/', '', $fromRaw));
         $namePart = trim($namePart, '"\'');
-        if (preg_match('/=\?([^?]+)\?[BbQq]\?([^?]+)\?=/i', $namePart, $enc)) {
-            $charset  = $enc[1];
-            $encoded  = $enc[2];
-            $decoded  = base64_decode($encoded);
-            $fromName = mb_convert_encoding($decoded, 'UTF-8', $charset);
+        // RFC2047 エンコードワード(=?charset?B|Q?...?=)の復号は標準の
+        // mb_decode_mimeheader に委譲する。自前実装は (1) Q エンコードを
+        // 常に base64_decode して破損 (2) 攻撃者が指定できる charset を
+        // mb_convert_encoding に渡し PHP8 で未捕捉 ValueError を起こす、
+        // という2つの問題があった。mb_decode_mimeheader は B/Q と未知の
+        // charset を安全に扱い、内部エンコーディング(UTF-8)で返す。
+        if (strpos($namePart, '=?') !== false) {
+            $decoded  = @mb_decode_mimeheader($namePart);
+            $fromName = ($decoded !== '') ? $decoded : $namePart;
         } else {
             $fromName = $namePart;
         }
@@ -104,26 +108,25 @@ if (FileDB::findByEmail($fromEmail)) {
     exit(0);
 }
 
-// ---- 保留中の重複チェック ----------------------------------
-$pending = FileDB::getPending();
-foreach ($pending as $p) {
-    if (strtolower($p['email']) === $fromEmail) {
-        pipeLog("INFO: Already pending: {$fromEmail} (skipping resend due to rate limit)");
-        // 旧版はここで再送していたが、踏み台リスクのため再送はやめる。
-        // ユーザー側で confirmUrl が届かない場合は 10分後の再送信を許可する。
-        exit(0);
-    }
-}
-
-// ---- 保留リストに追加 → 確認メール送信 -------------------
+// ---- 保留リストに原子的に追加（重複チェック＋追加を1操作で）-----
+// 旧実装は getPending()→ループ判定→addPending() の二段で、同一アドレスが
+// ほぼ同時に複数 MTA 経由で届くと重複行＋確認メール多重送信の余地があった。
+// register.php と同じ addPendingIfNew で原子化する。重複時は再送しない
+// （踏み台リスク回避。confirmUrl が届かない場合は per-email レート制限の
+//  10分後に再送信を許可）。
 $token = Token::generate();
-FileDB::addPending([
+$added = FileDB::addPendingIfNew([
     'email'      => $fromEmail,
     'name'       => $fromName,
     'token'      => $token,
     'source'     => 'mail',
     'created_at' => date('Y-m-d H:i:s'),
 ]);
+
+if (!$added) {
+    pipeLog("INFO: Already pending: {$fromEmail} (skipping resend)");
+    exit(0);
+}
 
 $mailer = new Mailer($admin);
 $result = $mailer->sendConfirmMail($fromEmail, Token::confirmUrl($token));

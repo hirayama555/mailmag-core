@@ -14,8 +14,6 @@ declare(strict_types=1);
 // その代わり uploads/.htaccess で PHP 等のスクリプト実行を禁止する（初回自動生成）。
 // ============================================================
 
-Auth::requireLogin();
-
 // 許可する画像 MIME と拡張子の対応（拡張子はこの表からのみ決定する）
 const MEDIA_ALLOWED = [
     'image/jpeg' => 'jpg',
@@ -29,6 +27,14 @@ $action = (string)($_GET['action'] ?? '');
 // ---- API アクション（JSON）。送信フォームの画像ピッカー / 管理画面の AJAX から呼ばれる ----
 if (in_array($action, ['list', 'upload', 'delete'], true)) {
     header('Content-Type: application/json; charset=UTF-8');
+    // 未ログイン（セッション切れ）時は HTML リダイレクトではなく 401 + JSON を返す。
+    // fetch().then(r=>r.json()) が 302 の HTML を受け取って「通信エラー」になるのを防ぐ。
+    if (!Auth::isLoggedIn()) {
+        http_response_code(401);
+        echo json_encode(['ok' => false, 'error' => 'ログインの有効期限が切れました。再度ログインしてください。']);
+        return;
+    }
+    $_SESSION['last_activity'] = time(); // API 操作でもセッションを延命する
     try {
         ensureUploadsDir();
         switch ($action) {
@@ -52,6 +58,8 @@ if (in_array($action, ['list', 'upload', 'delete'], true)) {
 }
 
 // ---- 引数なしアクセス = 画像ライブラリ管理画面（HTML）。左メニューから開く ----
+// ページ遷移なので未ログイン時はログイン画面へリダイレクトでよい。
+Auth::requireLogin();
 ensureUploadsDir();
 renderLibraryPage();
 
@@ -262,13 +270,7 @@ function actionUpload(): array
         return err('ファイルサイズが上限（' . formatBytes(UPLOAD_MAX_BYTES) . '）を超えています。');
     }
 
-    // 合計容量の上限チェック（現在の合計 + 今回分）
-    $current = currentTotalBytes();
-    if ($current + $size > UPLOAD_TOTAL_MAX_BYTES) {
-        return err('保存容量の上限（' . formatBytes(UPLOAD_TOTAL_MAX_BYTES) . '）に達しています。不要な画像を削除してください。');
-    }
-
-    // 実体の MIME を検出（拡張子は信用しない）
+    // 実体の MIME を検出（拡張子は信用しない）。直列化不要なのでロック前に行う。
     $finfo = new finfo(FILEINFO_MIME_TYPE);
     $mime  = (string)$finfo->file($tmp);
     if (!isset(MEDIA_ALLOWED[$mime])) {
@@ -280,8 +282,24 @@ function actionUpload(): array
     $name = 'img_' . str_replace('-', '', Uuid::v4()) . '.' . $ext;
     $dest = UPLOADS_DIR . '/' . $name;
 
-    if (!move_uploaded_file($tmp, $dest)) {
-        return err('ファイルの保存に失敗しました。uploads/ の書き込み権限を確認してください。');
+    // 合計容量チェック〜保存を直列化し TOCTOU（並行アップロードでの上限超過）を防ぐ。
+    // Lock は非ブロッキングのため短時間リトライで取得を試み、取れなければ
+    // ベストエフォートで続行する（容量上限はソフトガードのため許容）。
+    $locked = false;
+    for ($i = 0; $i < 50; $i++) {            // 最大約2秒
+        if (Lock::acquire('media_upload')) { $locked = true; break; }
+        usleep(40000);
+    }
+    try {
+        $current = currentTotalBytes();
+        if ($current + $size > UPLOAD_TOTAL_MAX_BYTES) {
+            return err('保存容量の上限（' . formatBytes(UPLOAD_TOTAL_MAX_BYTES) . '）に達しています。不要な画像を削除してください。');
+        }
+        if (!move_uploaded_file($tmp, $dest)) {
+            return err('ファイルの保存に失敗しました。uploads/ の書き込み権限を確認してください。');
+        }
+    } finally {
+        if ($locked) Lock::release('media_upload');
     }
     @chmod($dest, 0644);
 

@@ -51,7 +51,12 @@ final class Mailer
 
         $fromName  = (string)($this->admin['from_name']  ?? '');
         $fromEmail = (string)($this->admin['from_email'] ?? '');
-        $replyTo   = (string)($this->admin['reply_to']   ?? $fromEmail);
+        // reply_to は ?? が空文字('')に効かないため、空のときも from_email に
+        // フォールバックする（空の Reply-To ヘッダ送出を防ぐ）。
+        $replyTo   = (string)($this->admin['reply_to'] ?? '');
+        if ($replyTo === '') {
+            $replyTo = $fromEmail;
+        }
 
         if ($fromEmail === '' || !filter_var($fromEmail, FILTER_VALIDATE_EMAIL) ||
             preg_match('/[\r\n]/', $fromEmail) || preg_match('/[\r\n]/', $replyTo)) {
@@ -104,7 +109,9 @@ final class Mailer
             : $fromEmail;
 
         $headers  = "From: {$encodedFromName}\r\n";
-        $headers .= "Reply-To: {$replyTo}\r\n";
+        if ($replyTo !== '') {
+            $headers .= "Reply-To: {$replyTo}\r\n";
+        }
         $headers .= "Content-Type: {$contentType}\r\n";
         if (!$isMultipart) {
             $headers .= "Content-Transfer-Encoding: base64\r\n";
