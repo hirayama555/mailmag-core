@@ -538,7 +538,12 @@ final class FileDB
         // 書き込み中のクラッシュ/kill で JSON が空になる事故を避ける。
         // 同一 FS 上の rename は原子的（POSIX）なので、読み手は常に
         // 旧内容か新内容のどちらか完全な状態のみを見る。
-        $json = (string)json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        // json_encode が false を返す（不正UTF-8等）場合に (string) で '' を書くと
+        // 0バイトの壊れた JSON を rename してしまうため、ここで中断する。
+        $json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        if ($json === false) {
+            return false;
+        }
         $tmp  = $path . '.tmp.' . getmypid() . '.' . bin2hex(random_bytes(4));
 
         $fp = @fopen($tmp, 'wb');

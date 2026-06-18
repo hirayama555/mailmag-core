@@ -50,17 +50,44 @@ function saveSendDraft(): void
     ];
 }
 
+/**
+ * HTML本文から簡易的にプレーンテキストを生成する。
+ * HTMLメール送信時にテキスト本文を空にした場合、HTML非対応メーラー向けの
+ * テキストパートが空になってしまうのを防ぐためのフォールバック。
+ * 改行系タグを改行に変換 → タグ除去 → エンティティ復号 → 余分な空行を圧縮。
+ */
+function htmlToPlainText(string $html): string
+{
+    $text = preg_replace('/<\s*br\s*\/?\s*>/i', "\n", $html);
+    $text = preg_replace('#</\s*(p|div|h[1-6]|li|tr|table|blockquote)\s*>#i', "\n", $text);
+    $text = strip_tags($text);
+    $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $lines = array_map('trim', preg_split('/\R/u', $text) ?: []);
+    $text  = preg_replace("/\n{3,}/", "\n\n", implode("\n", $lines));
+    return trim($text);
+}
+
 $admin    = FileDB::getAdmin();
 $mailer   = new Mailer($admin);
 $sendMode = $_POST['send_mode'] ?? 'send';
+$htmlMode = !empty($_POST['html_mode']);
 $subject  = trim($_POST['subject']   ?? '');
 $body     = trim($_POST['body']      ?? '');
 $htmlBody = trim($_POST['html_body'] ?? '');
 
-if (!$subject || !$body) {
+// 件名は常に必須。本文（テキスト）は通常必須だが、HTMLメール送信時に
+// HTML本文があればテキスト本文は任意とする。
+$hasHtmlContent = $htmlMode && $htmlBody !== '';
+if (!$subject || (!$body && !$hasHtmlContent)) {
     saveSendDraft();
     header('Location: ' . SITE_URL . 'send.php?err=empty');
     exit;
+}
+
+// テキスト本文が空で HTML本文がある場合は、HTMLからテキスト版を自動生成する
+// （multipart/alternative のテキストパートが空になり「空メール」に見えるのを防ぐ）。
+if ($body === '' && $htmlBody !== '') {
+    $body = htmlToPlainText($htmlBody);
 }
 
 // ========== テスト送信 ==========

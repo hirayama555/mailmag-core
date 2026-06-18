@@ -113,7 +113,8 @@ require_once CORE_INCLUDES_DIR . '/header.php';
                         <p class="form-hint">
                             使用できる変数: <code>{{name}}</code>（購読者名）
                             <code>{{email}}</code>（メールアドレス）<br>
-                            フッターの購読解除URLは自動付加されます。
+                            フッターの購読解除URLは自動付加されます。<br>
+                            ※ HTMLメール送信時は空欄でも構いません（HTML本文からテキスト版を自動生成します）。
                         </p>
                     </div>
 
@@ -330,6 +331,8 @@ function destroyHtmlEditor() {
 function toggleHtmlMode(el) {
     const group = document.getElementById('html_body_group');
     group.style.display = el.checked ? 'block' : 'none';
+    // HTMLメール送信時はテキスト本文を任意にする（HTML本文から自動生成されるため）
+    document.getElementById('body').required = !el.checked;
     if (el.checked) {
         initHtmlEditor();
     } else {
@@ -359,9 +362,13 @@ document.getElementById('sendForm').addEventListener('submit', function () {
     if (window.tinymce) tinymce.triggerSave();
 });
 
-// 初期表示時、HTMLモードが既に ON ならエディタを起動
+// 初期表示時、HTMLモードが既に ON ならエディタを起動＋テキスト本文を任意に
 document.addEventListener('DOMContentLoaded', function () {
-    if (document.getElementById('html_mode').checked) initHtmlEditor();
+    const hm = document.getElementById('html_mode');
+    if (hm.checked) {
+        document.getElementById('body').required = false;
+        initHtmlEditor();
+    }
 });
 
 // ---- 画像ピッカー -------------------------------------------
