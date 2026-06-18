@@ -189,11 +189,16 @@ final class Updater
         ]);
         $body = @file_get_contents($url, false, $ctx);
         if ($body === false) return null;
-        // ステータスコード確認
-        if (isset($http_response_header[0])
-            && !preg_match('#HTTP/\S+\s+2\d\d#', (string)$http_response_header[0])
-        ) {
-            return null;
+        // $http_response_header[0] はリダイレクト連鎖の先頭（302 等）を指すため、
+        // 最後の HTTP ステータス行を探してチェックする。
+        if (!empty($http_response_header)) {
+            $lastStatus = '';
+            foreach (array_reverse($http_response_header) as $h) {
+                if (preg_match('#^HTTP/#', (string)$h)) { $lastStatus = (string)$h; break; }
+            }
+            if ($lastStatus !== '' && !preg_match('#HTTP/\S+\s+2\d\d#', $lastStatus)) {
+                return null;
+            }
         }
         return $body;
     }
