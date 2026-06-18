@@ -52,6 +52,14 @@ defined('OPENS_DIR')   or define('OPENS_DIR',   DATA_DIR . '/opens');
 defined('LOCK_DIR')    or define('LOCK_DIR',    DATA_DIR . '/locks');
 defined('RATELIMIT_DIR') or define('RATELIMIT_DIR', DATA_DIR . '/rate_limit');
 
+// 画像アップロード（HTMLメール用）。uploads/ は data/ と異なり**公開**ディレクトリ。
+// メール受信側のメーラーが画像を直接取得できるよう DocumentRoot 配下に置く。
+// PHP 実行は uploads/.htaccess で無効化する（エンドポイントが初回自動生成）。
+defined('UPLOADS_DIR') or define('UPLOADS_DIR', BASE_DIR . '/uploads');
+defined('UPLOADS_URL') or define('UPLOADS_URL', SITE_URL . 'uploads/');
+defined('UPLOAD_MAX_BYTES')       or define('UPLOAD_MAX_BYTES',       5 * 1024 * 1024);   // 1ファイル上限 5MB
+defined('UPLOAD_TOTAL_MAX_BYTES') or define('UPLOAD_TOTAL_MAX_BYTES', 100 * 1024 * 1024); // 合計上限 100MB
+
 // ---- ランタイム既定 ----------------------------------------
 date_default_timezone_set('Asia/Tokyo');
 mb_internal_encoding('UTF-8');

@@ -124,7 +124,7 @@ require_once CORE_INCLUDES_DIR . '/header.php';
                                    <?= $htmlModeChecked ? 'checked' : '' ?>>
                             HTMLメールとして送信する
                         </label>
-                        <p class="form-hint">チェックすると HTML 本文欄が表示されます。画像は外部URL（&lt;img src="https://..."&gt;）で参照してください。</p>
+                        <p class="form-hint">チェックすると HTML 本文欄（ビジュアルエディタ）が表示されます。画像はツールバーの画像ボタンから、事前にアップロードした画像を選んで挿入できます。</p>
                     </div>
 
                     <div id="html_body_group" style="display:<?= $htmlModeChecked ? 'block' : 'none' ?>;">
@@ -135,7 +135,8 @@ require_once CORE_INCLUDES_DIR . '/header.php';
                             ><?= htmlspecialchars($prefill['html_body'] ?? '', ENT_QUOTES, 'UTF-8') ?></textarea>
                             <p class="form-hint">
                                 上の「本文」欄はテキストメール用（HTML非対応のメーラー向け）に引き続き使用されます。<br>
-                                HTML 本文が空の場合はテキストのみで送信されます。
+                                HTML 本文が空の場合はテキストのみで送信されます。<br>
+                                ※ ビジュアルエディタが読み込めない環境では、この欄に直接 HTML を記述できます。
                             </p>
                         </div>
                     </div>
@@ -232,15 +233,106 @@ require_once CORE_INCLUDES_DIR . '/header.php';
     </div>
 </form>
 
+<!-- ===== 画像ピッカー モーダル ===== -->
+<div id="mediaModal" class="media-modal" style="display:none;">
+    <div class="media-modal__backdrop" onclick="closeMediaPicker()"></div>
+    <div class="media-modal__panel">
+        <div class="media-modal__head">
+            <h3 style="margin:0;">画像ライブラリ</h3>
+            <button type="button" class="btn btn-ghost" onclick="closeMediaPicker()">&times; 閉じる</button>
+        </div>
+
+        <div class="media-modal__toolbar">
+            <label class="btn btn-primary" style="cursor:pointer;margin:0;">
+                &#10133; 新規アップロード
+                <input type="file" id="mediaFileInput" accept="image/jpeg,image/png,image/gif,image/webp"
+                       style="display:none;" onchange="uploadMedia(this)">
+            </label>
+            <span id="mediaUsage" class="text-muted" style="font-size:12px;"></span>
+        </div>
+
+        <div id="mediaError" class="alert alert-danger" style="display:none;margin:0 0 10px;"></div>
+        <div id="mediaUploading" class="text-muted" style="display:none;font-size:13px;margin-bottom:8px;">アップロード中…</div>
+
+        <div id="mediaGrid" class="media-grid">
+            <p class="text-muted" style="grid-column:1/-1;">読み込み中…</p>
+        </div>
+
+        <div class="media-modal__foot">
+            <button type="button" class="btn btn-ghost" id="mediaDeleteBtn" onclick="deleteSelectedMedia()" disabled>選択した画像を削除</button>
+            <div class="flex gap-2">
+                <button type="button" class="btn btn-outline" onclick="closeMediaPicker()">キャンセル</button>
+                <button type="button" class="btn btn-primary" id="mediaApplyBtn" onclick="applySelectedMedia()" disabled>適用</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.media-modal{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;}
+.media-modal__backdrop{position:absolute;inset:0;background:rgba(0,0,0,.5);}
+.media-modal__panel{position:relative;background:#fff;border-radius:10px;width:min(880px,94vw);max-height:90vh;
+    display:flex;flex-direction:column;padding:18px;box-shadow:0 12px 40px rgba(0,0,0,.3);}
+.media-modal__head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+.media-modal__toolbar{display:flex;align-items:center;gap:14px;margin-bottom:12px;}
+.media-modal__foot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid #e5e7eb;}
+.media-grid{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;min-height:200px;}
+.media-thumb{position:relative;border:2px solid transparent;border-radius:8px;overflow:hidden;cursor:pointer;background:#f3f4f6;aspect-ratio:1/1;}
+.media-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+.media-thumb.selected{border-color:#2563eb;box-shadow:0 0 0 2px rgba(37,99,235,.3);}
+.media-thumb__size{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.55);color:#fff;font-size:10px;padding:2px 4px;}
+</style>
+
+<!-- TinyMCE（自己ホスト版・GPL / APIキー不要）。読込失敗時は素の textarea にフォールバック -->
+<script src="https://cdn.jsdelivr.net/npm/tinymce@7/tinymce.min.js" referrerpolicy="origin"></script>
+
 <script>
+const MEDIA_URL  = '<?= SITE_URL ?>media.php';
+const MEDIA_CSRF = '<?= Token::getCsrf() ?>';
+
 function toggleSchedule(el) {
     document.getElementById('schedule_inputs').style.display =
         el.value === 'reserve' ? 'block' : 'none';
 }
+
+// ---- HTMLエディタ（TinyMCE）----------------------------------
+function hasEditor() {
+    return window.tinymce && tinymce.get('html_body');
+}
+function initHtmlEditor() {
+    if (!window.tinymce || hasEditor()) return;
+    tinymce.init({
+        selector: '#html_body',
+        license_key: 'gpl',
+        language: 'ja',
+        // 言語パックは本体に同梱されないため i18n パッケージから読む（読込失敗時は英語UIにフォールバック）
+        language_url: 'https://cdn.jsdelivr.net/npm/tinymce-i18n@latest/langs7/ja.js',
+        height: 380,
+        menubar: false,
+        branding: false,
+        promotion: false,
+        plugins: 'link image lists code autolink',
+        toolbar: 'undo redo | bold italic underline forecolor | bullist numlist | '
+               + 'alignleft aligncenter alignright | link image | removeformat | code',
+        // メール互換のため class ではなくインラインスタイルで出力
+        forced_root_block: 'p',
+        convert_urls: false,
+        file_picker_types: 'image',
+        file_picker_callback: function (callback) {
+            openMediaPicker(callback);
+        }
+    });
+}
+function destroyHtmlEditor() {
+    if (hasEditor()) tinymce.get('html_body').remove();
+}
 function toggleHtmlMode(el) {
     const group = document.getElementById('html_body_group');
     group.style.display = el.checked ? 'block' : 'none';
-    if (!el.checked) {
+    if (el.checked) {
+        initHtmlEditor();
+    } else {
+        destroyHtmlEditor();
         document.getElementById('html_body').value = '';
     }
 }
@@ -248,13 +340,133 @@ function loadTemplate() {
     const sel = document.getElementById('tpl_select');
     const opt = sel.options[sel.selectedIndex];
     if (!opt.value) return;
-    document.getElementById('subject').value   = opt.dataset.subject;
-    document.getElementById('body').value      = opt.dataset.body;
+    document.getElementById('subject').value = opt.dataset.subject;
+    document.getElementById('body').value    = opt.dataset.body;
     const htmlBody = opt.dataset.htmlBody || '';
-    document.getElementById('html_body').value = htmlBody;
     const htmlMode = document.getElementById('html_mode');
     htmlMode.checked = htmlBody !== '';
     toggleHtmlMode(htmlMode);
+    if (hasEditor()) {
+        tinymce.get('html_body').setContent(htmlBody);
+    } else {
+        document.getElementById('html_body').value = htmlBody;
+    }
+}
+
+// 送信前にエディタ内容を textarea へ書き戻す（TinyMCE 使用時）
+document.getElementById('sendForm').addEventListener('submit', function () {
+    if (window.tinymce) tinymce.triggerSave();
+});
+
+// 初期表示時、HTMLモードが既に ON ならエディタを起動
+document.addEventListener('DOMContentLoaded', function () {
+    if (document.getElementById('html_mode').checked) initHtmlEditor();
+});
+
+// ---- 画像ピッカー -------------------------------------------
+let mediaCallback = null;   // TinyMCE へ URL を返すコールバック
+let mediaSelected = null;   // 選択中 {name, url}
+
+function openMediaPicker(cb) {
+    mediaCallback = cb || null;
+    mediaSelected = null;
+    document.getElementById('mediaApplyBtn').disabled  = true;
+    document.getElementById('mediaDeleteBtn').disabled = true;
+    document.getElementById('mediaError').style.display = 'none';
+    document.getElementById('mediaModal').style.display = 'flex';
+    loadMediaList();
+}
+function closeMediaPicker() {
+    document.getElementById('mediaModal').style.display = 'none';
+    mediaCallback = null;
+}
+function showMediaError(msg) {
+    const el = document.getElementById('mediaError');
+    el.textContent = msg;
+    el.style.display = 'block';
+}
+function fmtBytes(b) {
+    if (b >= 1048576) return (b / 1048576).toFixed(1) + 'MB';
+    if (b >= 1024)    return (b / 1024).toFixed(1) + 'KB';
+    return b + 'B';
+}
+function loadMediaList() {
+    const grid = document.getElementById('mediaGrid');
+    grid.innerHTML = '<p class="text-muted" style="grid-column:1/-1;">読み込み中…</p>';
+    fetch(MEDIA_URL + '?action=list', {credentials: 'same-origin'})
+        .then(r => r.json())
+        .then(data => {
+            if (!data.ok) { showMediaError(data.error || '一覧の取得に失敗しました。'); return; }
+            document.getElementById('mediaUsage').textContent =
+                '画像登録状況: ' + fmtBytes(data.total) + ' / ' + fmtBytes(data.total_max);
+            if (!data.items.length) {
+                grid.innerHTML = '<p class="text-muted" style="grid-column:1/-1;">'
+                    + 'まだ画像がありません。「新規アップロード」から追加してください。</p>';
+                return;
+            }
+            grid.innerHTML = '';
+            data.items.forEach(it => {
+                const div = document.createElement('div');
+                div.className = 'media-thumb';
+                div.title = it.name;
+                div.innerHTML = '<img src="' + it.url + '" alt="" loading="lazy">'
+                    + '<span class="media-thumb__size">' + fmtBytes(it.size) + '</span>';
+                div.onclick = () => selectMedia(div, it);
+                grid.appendChild(div);
+            });
+        })
+        .catch(() => showMediaError('通信エラーが発生しました。'));
+}
+function selectMedia(el, item) {
+    document.querySelectorAll('.media-thumb.selected').forEach(n => n.classList.remove('selected'));
+    el.classList.add('selected');
+    mediaSelected = item;
+    document.getElementById('mediaApplyBtn').disabled  = false;
+    document.getElementById('mediaDeleteBtn').disabled = false;
+}
+function uploadMedia(input) {
+    if (!input.files || !input.files[0]) return;
+    const fd = new FormData();
+    fd.append('csrf_token', MEDIA_CSRF);
+    fd.append('file', input.files[0]);
+    document.getElementById('mediaError').style.display = 'none';
+    document.getElementById('mediaUploading').style.display = 'block';
+    fetch(MEDIA_URL + '?action=upload', {method: 'POST', body: fd, credentials: 'same-origin'})
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('mediaUploading').style.display = 'none';
+            input.value = '';
+            if (!data.ok) { showMediaError(data.error || 'アップロードに失敗しました。'); return; }
+            loadMediaList();
+        })
+        .catch(() => {
+            document.getElementById('mediaUploading').style.display = 'none';
+            showMediaError('通信エラーが発生しました。');
+        });
+}
+function deleteSelectedMedia() {
+    if (!mediaSelected) return;
+    if (!confirm('「' + mediaSelected.name + '」を削除しますか？\nこの画像を使用中のメールがあると表示されなくなります。')) return;
+    const fd = new FormData();
+    fd.append('csrf_token', MEDIA_CSRF);
+    fd.append('name', mediaSelected.name);
+    fetch(MEDIA_URL + '?action=delete', {method: 'POST', body: fd, credentials: 'same-origin'})
+        .then(r => r.json())
+        .then(data => {
+            if (!data.ok) { showMediaError(data.error || '削除に失敗しました。'); return; }
+            mediaSelected = null;
+            document.getElementById('mediaApplyBtn').disabled  = true;
+            document.getElementById('mediaDeleteBtn').disabled = true;
+            loadMediaList();
+        })
+        .catch(() => showMediaError('通信エラーが発生しました。'));
+}
+function applySelectedMedia() {
+    if (!mediaSelected) return;
+    if (typeof mediaCallback === 'function') {
+        mediaCallback(mediaSelected.url, {alt: ''});
+    }
+    closeMediaPicker();
 }
 </script>
 
