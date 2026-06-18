@@ -40,9 +40,9 @@ require_once CORE_INCLUDES_DIR . '/header.php';
 ?>
 
 <?php if ($msg === 'queued'): ?>
-    <div class="alert alert-success">送信キューに追加しました。CRONが順次送信します。</div>
+    <div class="alert alert-success">送信キューに追加しました。5分以内に送信が開始されます。</div>
 <?php elseif ($msg === 'reserved'): ?>
-    <div class="alert alert-success">予約送信を設定しました。指定日時にCRONが送信を開始します。</div>
+    <div class="alert alert-success">予約送信を設定しました。指定日時に送信が開始されます。</div>
 <?php elseif ($msg === 'cancel_ok'): ?>
     <div class="alert alert-success">予約送信をキャンセルしました。</div>
 <?php endif; ?>
