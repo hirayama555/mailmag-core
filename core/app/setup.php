@@ -29,7 +29,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (empty($p['site_name']))                          $error = 'サイト名を入力してください。';
     elseif (empty($p['admin_email']))                    $error = '管理者メールアドレスを入力してください。';
+    elseif (!filter_var(trim($p['admin_email']), FILTER_VALIDATE_EMAIL)) $error = '管理者メールアドレスの形式が正しくありません。';
     elseif (empty($p['from_email']))                     $error = '送信元メールアドレスを入力してください。';
+    elseif (!filter_var(trim($p['from_email']), FILTER_VALIDATE_EMAIL))  $error = '送信元メールアドレスの形式が正しくありません。';
+    elseif (!empty($p['reply_to']) && !filter_var(trim($p['reply_to']), FILTER_VALIDATE_EMAIL))             $error = 'Reply-Toアドレスの形式が正しくありません。';
+    elseif (!empty($p['register_email']) && !filter_var(trim($p['register_email']), FILTER_VALIDATE_EMAIL)) $error = '空メール受信アドレスの形式が正しくありません。';
     elseif (empty($p['password']))                       $error = 'パスワードを入力してください。';
     elseif (strlen($p['password']) < 8)                  $error = 'パスワードは8文字以上にしてください。';
     elseif ($p['password'] !== $p['password_confirm'])   $error = 'パスワードが一致しません。';

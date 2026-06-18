@@ -333,7 +333,8 @@ final class FileDB
         $list = [];
         foreach ($files as $f) {
             $data = json_decode((string)file_get_contents($f), true);
-            if ($data) $list[] = $data;
+            if ($data) { $list[] = $data; }
+            else { self::logCorruptJson($f); }
         }
         usort($list, fn($a, $b) => strcmp((string)$b['sent_at'], (string)$a['sent_at']));
         return $list;
@@ -425,7 +426,8 @@ final class FileDB
         $list = [];
         foreach ($files as $f) {
             $data = json_decode((string)file_get_contents($f), true);
-            if ($data) $list[] = $data;
+            if ($data) { $list[] = $data; }
+            else { self::logCorruptJson($f); }
         }
         usort($list, fn($a, $b) => strcmp((string)$a['scheduled_at'], (string)$b['scheduled_at']));
         return $list;
@@ -528,6 +530,22 @@ final class FileDB
     /**
      * @param mixed $data
      */
+    /**
+     * 破損 JSON（json_decode 失敗かつ中身が空でない）を error.log に記録する。
+     * 一覧系メソッドは破損ファイルを黙ってスキップするため、pending キューが
+     * 破損して未送信のまま放置される事故を可観測にする（無通知化の防止）。
+     */
+    private static function logCorruptJson(string $path): void
+    {
+        $raw = @file_get_contents($path);
+        if ($raw === false || trim((string)$raw) === '') return; // 空ファイルは破損扱いしない
+        @file_put_contents(
+            DATA_DIR . '/error.log',
+            '[' . date('Y-m-d H:i:s') . '] CORRUPT JSON skipped: ' . $path . PHP_EOL,
+            FILE_APPEND | LOCK_EX
+        );
+    }
+
     private static function writeJson(string $path, $data): bool
     {
         $dir = dirname($path);

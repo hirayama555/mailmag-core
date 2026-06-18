@@ -42,13 +42,30 @@ if (time() - $lastCheck >= 86400) {
     @touch($checkFlag); // 失敗時も次回まで間隔を空ける（連続呼び出し抑止）
 }
 
-// ---- pending なキューを取得 -------------------------------
-$queues = FileDB::getQueueList();
-$queue  = null;
+// ---- 処理対象キューを選ぶ ---------------------------------
+// 1) pending を優先。
+// 2) pending が無ければ、'sending' のまま QUEUE_STALL_SECONDS 以上放置された
+//    キュー（＝前回バッチがクラッシュ/タイムアウトで中断した残骸）を回収する。
+//    cron_queue は単一ロックで直列化されているため、ここで拾う 'sending' を
+//    別プロセスが処理中ということはない（停止済みと判断して安全に再開できる）。
+$queues      = FileDB::getQueueList();
+$queue       = null;
+$stallCutoff = time() - QUEUE_STALL_SECONDS;
 foreach ($queues as $q) {
-    if ($q['status'] === 'pending') {
+    if (($q['status'] ?? '') === 'pending') {
         $queue = $q;
         break;
+    }
+}
+if (!$queue) {
+    foreach ($queues as $q) {
+        if (($q['status'] ?? '') !== 'sending') continue;
+        $stamp = strtotime((string)($q['updated_at'] ?? $q['created_at'] ?? '')) ?: 0;
+        if ($stamp <= $stallCutoff) {
+            $queue = $q;
+            echo "[{$now}] Recovering stalled queue: {$queue['id']} (offset={$queue['offset']})" . PHP_EOL;
+            break;
+        }
     }
 }
 
@@ -59,8 +76,9 @@ if (!$queue) {
 
 echo "[{$now}] Processing queue: {$queue['id']} offset={$queue['offset']}" . PHP_EOL;
 
-// ロック取得済みなのでstatus='sending'は補助的な可視化用
-$queue['status'] = 'sending';
+// バッチ処理中であることを記録。updated_at はスタール検知（再選択可否）の判定キーを兼ねる。
+$queue['status']     = 'sending';
+$queue['updated_at'] = $now;
 FileDB::saveQueue($queue);
 FileDB::updateHistory($queue['id'], ['status' => 'sending']);
 
@@ -91,6 +109,11 @@ if (empty($batchIds)) {
 
 $sentCount    = 0;
 $successCount = 0;
+// クラッシュ/タイムアウト時の再送・取りこぼしを最小化するため、ループ内で
+// 進捗を逐次永続化する。ここで base を控え、checkpoint/最終書き戻しで base+今回分を保存。
+$baseSent    = (int)($queue['sent_count']    ?? 0);
+$baseSuccess = (int)($queue['success_count'] ?? 0);
+$baseOffset  = $offset;
 
 foreach ($batchIds as $subId) {
     $sub = $subMap[$subId] ?? null;
@@ -128,15 +151,29 @@ foreach ($batchIds as $subId) {
     }
     $sentCount++;
 
+    // 逐次チェックポイント: QUEUE_CHECKPOINT_EVERY 通ごとに進捗を永続化。
+    // これにより (a) 途中クラッシュ時も次回 cron が offset から再開でき、
+    // (b) 再送される範囲が最大 QUEUE_CHECKPOINT_EVERY 通に限定される。
+    if ($sentCount % QUEUE_CHECKPOINT_EVERY === 0) {
+        $queue['status']        = 'sending';
+        $queue['offset']        = $baseOffset + $sentCount;
+        $queue['sent_count']    = $baseSent + $sentCount;
+        $queue['success_count'] = $baseSuccess + $successCount;
+        $queue['updated_at']    = date('Y-m-d H:i:s');
+        FileDB::saveQueue($queue);
+    }
+
     if ($sendInterval > 0) {
         usleep((int)($sendInterval * 1000000));
     }
 }
 
 // ---- キュー進捗の更新 -------------------------------------
-$newOffset    = $offset + $sentCount;
-$totalSent    = (int)($queue['sent_count']    ?? 0) + $sentCount;
-$totalSuccess = (int)($queue['success_count'] ?? 0) + $successCount;
+// 注意: $queue['sent_count'] 等はチェックポイントで途中更新されているため、
+// ループ開始前に控えた base 値を基準に最終値を算出する（二重計上の回避）。
+$newOffset    = $baseOffset + $sentCount;
+$totalSent    = $baseSent + $sentCount;
+$totalSuccess = $baseSuccess + $successCount;
 $isComplete   = $newOffset >= count($pendingIds);
 
 echo "[{$now}] Sent {$sentCount} (success: {$successCount}), offset {$offset}→{$newOffset}, complete=" . ($isComplete ? 'yes' : 'no') . PHP_EOL;
@@ -154,6 +191,7 @@ if ($isComplete) {
     $queue['offset']        = $newOffset;
     $queue['sent_count']    = $totalSent;
     $queue['success_count'] = $totalSuccess;
+    $queue['updated_at']    = date('Y-m-d H:i:s');
     FileDB::saveQueue($queue);
     FileDB::updateHistory($queue['id'], [
         'success_count' => $totalSuccess,

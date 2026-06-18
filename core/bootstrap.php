@@ -41,6 +41,13 @@ define('MAILMAG_VERSION', MAILMAG_CORE_VERSION);
 defined('BATCH_SIZE')      or define('BATCH_SIZE',      100);
 defined('SEND_INTERVAL')   or define('SEND_INTERVAL',   0.1);
 defined('MAX_EXEC_TIME')   or define('MAX_EXEC_TIME',   240);
+// バッチ送信が途中でクラッシュ/タイムアウトすると status='sending' のまま残るため、
+// この秒数以上 updated_at が更新されていない 'sending' キューは「停止」とみなして回収する。
+// 正常な1回の実行(MAX_EXEC_TIME=240秒)を十分上回る値にすること（誤回収防止）。
+defined('QUEUE_STALL_SECONDS') or define('QUEUE_STALL_SECONDS', 900);
+// 送信ループ内で進捗(offset/カウンタ)を永続化する間隔（通）。
+// 小さいほどクラッシュ時の再送/取りこぼし範囲が縮むが、保存I/Oが増える。
+defined('QUEUE_CHECKPOINT_EVERY') or define('QUEUE_CHECKPOINT_EVERY', 25);
 defined('SESSION_NAME')    or define('SESSION_NAME',    'mailmag_sess');
 defined('SESSION_LIFETIME')or define('SESSION_LIFETIME', 3600);
 

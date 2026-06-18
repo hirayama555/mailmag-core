@@ -27,14 +27,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
+        // メールアドレスのサーバ側検証。不正な from_email を保存すると
+        // Mailer::send が常に false を返し全配信が無言で失敗するため、保存前に弾く。
+        $inFromEmail     = trim($p['from_email'] ?? '');
+        $inAdminEmail    = trim($p['admin_email'] ?? '');
+        $inReplyTo       = trim($p['reply_to'] ?? '');
+        $inRegisterEmail = trim($p['register_email'] ?? '');
+        if (!$error) {
+            $emailChecks = [
+                '送信元メールアドレス'   => [$inFromEmail,     true],   // 必須
+                '管理者メールアドレス'   => [$inAdminEmail,    false],
+                'Reply-Toアドレス'       => [$inReplyTo,       false],
+                '空メール受信アドレス'   => [$inRegisterEmail, false],
+            ];
+            foreach ($emailChecks as $label => $spec) {
+                [$val, $required] = $spec;
+                if ($val === '') {
+                    if ($required) { $error = $label . 'を入力してください。'; break; }
+                } elseif (!filter_var($val, FILTER_VALIDATE_EMAIL)) {
+                    $error = $label . 'の形式が正しくありません。'; break;
+                }
+            }
+        }
+
         if (!$error) {
             $admin['site_name']      = trim($p['site_name'] ?? '');
-            $admin['admin_email']    = trim($p['admin_email'] ?? '');
+            $admin['admin_email']    = $inAdminEmail;
             $admin['admin_password'] = $newPassword;
             $admin['from_name']      = trim($p['from_name'] ?? '');
-            $admin['from_email']     = trim($p['from_email'] ?? '');
-            $admin['reply_to']       = trim($p['reply_to'] ?? '');
-            $admin['register_email'] = trim($p['register_email'] ?? '');
+            $admin['from_email']     = $inFromEmail;
+            // reply_to / register_email は空なら送信元にフォールバック（setup.php と同挙動）
+            $admin['reply_to']       = $inReplyTo       !== '' ? $inReplyTo       : $inFromEmail;
+            $admin['register_email'] = $inRegisterEmail !== '' ? $inRegisterEmail : $inFromEmail;
             $admin['batch_size']     = max(10, min(500, (int)($p['batch_size'] ?? 100)));
             $admin['send_interval']  = max(0, min(5, (float)($p['send_interval'] ?? 0.1)));
             $admin['footer_text']    = $p['footer_text'] ?? '';
