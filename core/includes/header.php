@@ -45,6 +45,9 @@ $siteName = $admin['site_name'] ?? 'メルマガ管理';
             <a href="<?= SITE_URL ?>template.php" class="<?= ($activeNav ?? '') === 'template' ? 'active' : '' ?>">
                 <span class="icon">&#9998;</span> テンプレート
             </a>
+            <a href="<?= SITE_URL ?>media.php" class="<?= ($activeNav ?? '') === 'media' ? 'active' : '' ?>">
+                <span class="icon">&#128247;</span> 画像ライブラリ
+            </a>
 
             <div class="nav-section">設定</div>
             <a href="<?= SITE_URL ?>settings.php" class="<?= ($activeNav ?? '') === 'settings' ? 'active' : '' ?>">

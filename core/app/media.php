@@ -16,8 +16,6 @@ declare(strict_types=1);
 
 Auth::requireLogin();
 
-header('Content-Type: application/json; charset=UTF-8');
-
 // 許可する画像 MIME と拡張子の対応（拡張子はこの表からのみ決定する）
 const MEDIA_ALLOWED = [
     'image/jpeg' => 'jpg',
@@ -28,31 +26,182 @@ const MEDIA_ALLOWED = [
 
 $action = (string)($_GET['action'] ?? '');
 
-try {
-    ensureUploadsDir();
-
-    switch ($action) {
-        case 'list':
-            echo json_encode(actionList(), JSON_UNESCAPED_SLASHES);
-            break;
-
-        case 'upload':
-            requirePostCsrf();
-            echo json_encode(actionUpload(), JSON_UNESCAPED_SLASHES);
-            break;
-
-        case 'delete':
-            requirePostCsrf();
-            echo json_encode(actionDelete(), JSON_UNESCAPED_SLASHES);
-            break;
-
-        default:
-            http_response_code(400);
-            echo json_encode(['ok' => false, 'error' => '不正なアクションです。']);
+// ---- API アクション（JSON）。送信フォームの画像ピッカー / 管理画面の AJAX から呼ばれる ----
+if (in_array($action, ['list', 'upload', 'delete'], true)) {
+    header('Content-Type: application/json; charset=UTF-8');
+    try {
+        ensureUploadsDir();
+        switch ($action) {
+            case 'list':
+                echo json_encode(actionList(), JSON_UNESCAPED_SLASHES);
+                break;
+            case 'upload':
+                requirePostCsrf();
+                echo json_encode(actionUpload(), JSON_UNESCAPED_SLASHES);
+                break;
+            case 'delete':
+                requirePostCsrf();
+                echo json_encode(actionDelete(), JSON_UNESCAPED_SLASHES);
+                break;
+        }
+    } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok' => false, 'error' => 'サーバーエラーが発生しました。']);
     }
-} catch (Throwable $e) {
-    http_response_code(500);
-    echo json_encode(['ok' => false, 'error' => 'サーバーエラーが発生しました。']);
+    return; // HTML レンダリングへは進まない
+}
+
+// ---- 引数なしアクセス = 画像ライブラリ管理画面（HTML）。左メニューから開く ----
+ensureUploadsDir();
+renderLibraryPage();
+
+// ---- 管理画面（HTML）--------------------------------------
+
+/**
+ * 画像ライブラリ管理画面を出力する。
+ * 送信フォームのモーダルと同じ API（?action=list/upload/delete）を AJAX で叩く
+ * フルページ版。ここでは「選んで挿入」ではなく登録・削除・URLコピーを行う。
+ */
+function renderLibraryPage(): void
+{
+    $pageTitle = '画像ライブラリ';
+    $activeNav = 'media';
+    require CORE_INCLUDES_DIR . '/header.php';
+    $csrf      = Token::getCsrf();
+    $mediaUrl  = SITE_URL . 'media.php';
+    ?>
+    <div class="card">
+        <div class="card-header"><h2>画像ライブラリ</h2></div>
+        <div class="card-body">
+            <p class="text-muted mb-4">
+                メールに挿入する画像をここで管理します。アップロードした画像は、メール送信画面の
+                ビジュアルエディタ（画像ボタン → 画像ライブラリ）から選んで挿入できます。<br>
+                対応形式: JPEG / PNG / GIF / WebP（1ファイル <?= htmlspecialchars(formatBytes(UPLOAD_MAX_BYTES), ENT_QUOTES, 'UTF-8') ?>・
+                合計 <?= htmlspecialchars(formatBytes(UPLOAD_TOTAL_MAX_BYTES), ENT_QUOTES, 'UTF-8') ?> まで）
+            </p>
+
+            <div class="flex gap-3" style="align-items:center;margin-bottom:14px;">
+                <label class="btn btn-primary" style="cursor:pointer;margin:0;">
+                    &#10133; 新規アップロード
+                    <input type="file" id="libFileInput" accept="image/jpeg,image/png,image/gif,image/webp"
+                           style="display:none;" onchange="libUpload(this)">
+                </label>
+                <span id="libUsage" class="text-muted" style="font-size:12px;"></span>
+                <span id="libUploading" class="text-muted" style="display:none;font-size:13px;">アップロード中…</span>
+            </div>
+
+            <div id="libError" class="alert alert-danger" style="display:none;"></div>
+
+            <div id="libGrid" class="lib-grid">
+                <p class="text-muted" style="grid-column:1/-1;">読み込み中…</p>
+            </div>
+        </div>
+    </div>
+
+    <style>
+    .lib-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px;}
+    .lib-card{border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;background:#fff;display:flex;flex-direction:column;}
+    .lib-card__thumb{aspect-ratio:1/1;background:#f3f4f6;display:flex;align-items:center;justify-content:center;overflow:hidden;}
+    .lib-card__thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+    .lib-card__body{padding:8px;display:flex;flex-direction:column;gap:6px;}
+    .lib-card__size{font-size:11px;color:#64748b;}
+    .lib-card__actions{display:flex;gap:6px;}
+    .lib-card__actions .btn{flex:1;padding:4px 6px;font-size:12px;}
+    </style>
+
+    <script>
+    const LIB_URL  = '<?= htmlspecialchars($mediaUrl, ENT_QUOTES, 'UTF-8') ?>';
+    const LIB_CSRF = '<?= htmlspecialchars($csrf, ENT_QUOTES, 'UTF-8') ?>';
+
+    function libFmtBytes(b){
+        if (b >= 1048576) return (b/1048576).toFixed(1) + 'MB';
+        if (b >= 1024)    return (b/1024).toFixed(1) + 'KB';
+        return b + 'B';
+    }
+    function libShowError(msg){
+        const el = document.getElementById('libError');
+        el.textContent = msg; el.style.display = 'block';
+    }
+    function libLoad(){
+        const grid = document.getElementById('libGrid');
+        grid.innerHTML = '<p class="text-muted" style="grid-column:1/-1;">読み込み中…</p>';
+        fetch(LIB_URL + '?action=list', {credentials:'same-origin'})
+            .then(r => r.json())
+            .then(data => {
+                if (!data.ok){ libShowError(data.error || '一覧の取得に失敗しました。'); return; }
+                document.getElementById('libUsage').textContent =
+                    '画像登録状況: ' + libFmtBytes(data.total) + ' / ' + libFmtBytes(data.total_max);
+                if (!data.items.length){
+                    grid.innerHTML = '<p class="text-muted" style="grid-column:1/-1;">'
+                        + 'まだ画像がありません。「新規アップロード」から追加してください。</p>';
+                    return;
+                }
+                grid.innerHTML = '';
+                data.items.forEach(it => {
+                    const card = document.createElement('div');
+                    card.className = 'lib-card';
+                    card.innerHTML =
+                        '<div class="lib-card__thumb"><img src="' + it.url + '" alt="" loading="lazy"></div>'
+                      + '<div class="lib-card__body">'
+                      +   '<span class="lib-card__size">' + libFmtBytes(it.size) + '</span>'
+                      +   '<div class="lib-card__actions">'
+                      +     '<button type="button" class="btn btn-outline">URLコピー</button>'
+                      +     '<button type="button" class="btn btn-ghost">削除</button>'
+                      +   '</div>'
+                      + '</div>';
+                    const btns = card.querySelectorAll('button');
+                    btns[0].onclick = () => libCopy(it.url, btns[0]);
+                    btns[1].onclick = () => libDelete(it.name);
+                    grid.appendChild(card);
+                });
+            })
+            .catch(() => libShowError('通信エラーが発生しました。'));
+    }
+    function libCopy(url, btn){
+        const done = () => { const t = btn.textContent; btn.textContent = 'コピーしました'; setTimeout(() => btn.textContent = t, 1200); };
+        if (navigator.clipboard && navigator.clipboard.writeText){
+            navigator.clipboard.writeText(url).then(done).catch(() => window.prompt('URL をコピーしてください', url));
+        } else {
+            window.prompt('URL をコピーしてください', url);
+        }
+    }
+    function libUpload(input){
+        if (!input.files || !input.files[0]) return;
+        const fd = new FormData();
+        fd.append('csrf_token', LIB_CSRF);
+        fd.append('file', input.files[0]);
+        document.getElementById('libError').style.display = 'none';
+        document.getElementById('libUploading').style.display = 'inline';
+        fetch(LIB_URL + '?action=upload', {method:'POST', body:fd, credentials:'same-origin'})
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('libUploading').style.display = 'none';
+                input.value = '';
+                if (!data.ok){ libShowError(data.error || 'アップロードに失敗しました。'); return; }
+                libLoad();
+            })
+            .catch(() => {
+                document.getElementById('libUploading').style.display = 'none';
+                libShowError('通信エラーが発生しました。');
+            });
+    }
+    function libDelete(name){
+        if (!confirm('「' + name + '」を削除しますか？\nこの画像を使用中のメールがあると表示されなくなります。')) return;
+        const fd = new FormData();
+        fd.append('csrf_token', LIB_CSRF);
+        fd.append('name', name);
+        fetch(LIB_URL + '?action=delete', {method:'POST', body:fd, credentials:'same-origin'})
+            .then(r => r.json())
+            .then(data => {
+                if (!data.ok){ libShowError(data.error || '削除に失敗しました。'); return; }
+                libLoad();
+            })
+            .catch(() => libShowError('通信エラーが発生しました。'));
+    }
+    document.addEventListener('DOMContentLoaded', libLoad);
+    </script>
+    <?php
+    require CORE_INCLUDES_DIR . '/footer.php';
 }
 
 // ---- アクション実装 ----------------------------------------

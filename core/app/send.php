@@ -269,7 +269,8 @@ require_once CORE_INCLUDES_DIR . '/header.php';
 </div>
 
 <style>
-.media-modal{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;}
+/* TinyMCE の補助ダイアログ（.tox-tinymce-aux, z-index:1300）より必ず上に出す */
+.media-modal{position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;}
 .media-modal__backdrop{position:absolute;inset:0;background:rgba(0,0,0,.5);}
 .media-modal__panel{position:relative;background:#fff;border-radius:10px;width:min(880px,94vw);max-height:90vh;
     display:flex;flex-direction:column;padding:18px;box-shadow:0 12px 40px rgba(0,0,0,.3);}
