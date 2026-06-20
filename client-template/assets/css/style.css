@@ -20,22 +20,42 @@
     --color-sidebar:#1e293b;
     --color-sidebar-hover: #334155;
     --color-sidebar-active:#2563eb;
+    --color-primary-soft: rgba(37,99,235,.10);
     --radius:       8px;
-    --shadow:       0 1px 3px rgba(0,0,0,.1), 0 1px 2px rgba(0,0,0,.06);
-    --shadow-md:    0 4px 6px rgba(0,0,0,.07), 0 2px 4px rgba(0,0,0,.05);
+    --radius-lg:    12px;
+    --shadow:       0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04);
+    --shadow-md:    0 4px 12px rgba(15,23,42,.08), 0 2px 4px rgba(15,23,42,.04);
+    --shadow-lg:    0 12px 32px rgba(15,23,42,.12), 0 4px 8px rgba(15,23,42,.06);
+    --focus-ring:   0 0 0 3px rgba(37,99,235,.35);
+    --transition:   .15s ease;
 }
 
 body {
     font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP",
-                 "Yu Gothic", sans-serif;
+                 "Yu Gothic", system-ui, -apple-system, "Segoe UI", sans-serif;
     font-size: 14px;
     color: var(--color-text);
     background: var(--color-bg);
     line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
 }
 
-a { color: var(--color-primary); text-decoration: none; }
+a { color: var(--color-primary); text-decoration: none; transition: color var(--transition); }
 a:hover { text-decoration: underline; }
+
+/* キーボード操作時のフォーカス可視化（アクセシビリティ）。
+   マウスクリックでは出さず、Tab 操作時のみリングを表示する。 */
+a:focus-visible,
+button:focus-visible,
+.btn:focus-visible,
+.sidebar-nav a:focus-visible,
+[tabindex]:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+    border-radius: 6px;
+}
 
 /* ============================================================
    レイアウト
@@ -189,7 +209,20 @@ a:hover { text-decoration: underline; }
     display: flex;
     flex-direction: column;
     gap: 6px;
+    position: relative;
+    overflow: hidden;
+    transition: box-shadow var(--transition), transform var(--transition);
 }
+.stat-card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+/* 種別を示す左端のアクセントライン */
+.stat-card.primary::before,
+.stat-card.success::before,
+.stat-card.danger::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+}
+.stat-card.primary::before { background: var(--color-primary); }
+.stat-card.success::before { background: var(--color-success); }
+.stat-card.danger::before  { background: var(--color-danger); }
 
 .stat-card .label { font-size: 12px; color: var(--color-muted); font-weight: 600; }
 .stat-card .value { font-size: 28px; font-weight: 800; color: var(--color-text); }
@@ -204,6 +237,7 @@ a:hover { text-decoration: underline; }
 .btn {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 6px;
     padding: 8px 16px;
     border-radius: 6px;
@@ -211,19 +245,28 @@ a:hover { text-decoration: underline; }
     font-weight: 600;
     cursor: pointer;
     border: 1px solid transparent;
-    transition: background .15s, box-shadow .15s;
+    transition: background var(--transition), box-shadow var(--transition),
+                transform var(--transition), border-color var(--transition);
     line-height: 1;
     white-space: nowrap;
+    user-select: none;
 }
 
 .btn:hover { text-decoration: none; }
+/* 押下時にわずかに沈み込ませて触覚的フィードバックを出す */
+.btn:active { transform: translateY(1px); }
+.btn:disabled,
+.btn[disabled] { opacity: .5; cursor: not-allowed; transform: none; }
 
 .btn-primary {
     background: var(--color-primary);
     color: #fff;
     border-color: var(--color-primary);
 }
-.btn-primary:hover { background: var(--color-primary-dark); color: #fff; }
+.btn-primary:hover {
+    background: var(--color-primary-dark); color: #fff;
+    box-shadow: 0 4px 12px rgba(37,99,235,.3);
+}
 
 .btn-danger  { background: var(--color-danger); color: #fff; border-color: var(--color-danger); }
 .btn-danger:hover { background: #b91c1c; color: #fff; }
@@ -423,15 +466,24 @@ tbody tr:last-child td { border-bottom: none; }
 
 .login-card {
     background: #fff;
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
     padding: 40px 36px;
     width: 100%;
     max-width: 400px;
     box-shadow: 0 20px 60px rgba(0,0,0,.3);
+    animation: card-rise .35s ease both;
 }
 
 .login-card h1 { font-size: 22px; font-weight: 800; margin-bottom: 6px; }
 .login-card .sub { color: var(--color-muted); font-size: 13px; margin-bottom: 28px; }
+
+@keyframes card-rise {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .login-card, .public-card { animation: none; }
+}
 
 /* ============================================================
    公開ページ（register / unsubscribe）
@@ -447,12 +499,13 @@ tbody tr:last-child td { border-bottom: none; }
 
 .public-card {
     background: #fff;
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
     padding: 40px 36px;
     width: 100%;
     max-width: 460px;
     box-shadow: var(--shadow-md);
     text-align: center;
+    animation: card-rise .35s ease both;
 }
 
 .public-card h1 { font-size: 20px; font-weight: 700; margin-bottom: 10px; }
@@ -480,3 +533,87 @@ tbody tr:last-child td { border-bottom: none; }
 .font-mono    { font-family: monospace; }
 .w-full       { width: 100%; }
 .truncate     { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ============================================================
+   質感の磨き（v1.4.0）
+   ============================================================ */
+/* カードの hover を少しだけ持ち上げて操作対象であることを示す
+   （クリック可能なテーブル系カードでなくても、軽い反応に留める） */
+.card { transition: box-shadow var(--transition); }
+
+/* アラートにアイコン的な記号を付け、種別を一目で分かるようにする */
+.alert { display: flex; align-items: flex-start; gap: 8px; }
+.alert::before { font-weight: 700; flex-shrink: 0; }
+.alert-success::before { content: "\2713"; color: var(--color-success); }   /* ✓ */
+.alert-danger::before  { content: "\26A0"; color: var(--color-danger); }    /* ⚠ */
+.alert-warn::before    { content: "\26A0"; color: var(--color-warn); }      /* ⚠ */
+.alert-info::before    { content: "\2139"; color: var(--color-primary); }   /* ℹ */
+
+/* バッジに微細な内側の縁を足してコントラストを底上げ */
+.badge { box-shadow: inset 0 0 0 1px rgba(15,23,42,.04); }
+
+/* テーブル行の hover をなめらかに */
+tbody tr { transition: background var(--transition); }
+
+/* 入力の placeholder を少し淡く */
+.form-control::placeholder { color: #94a3b8; }
+
+/* ============================================================
+   レスポンシブ
+   ============================================================ */
+
+/* タブレット以下: サイドバーを上部の横並びバーに変える */
+@media (max-width: 860px) {
+    .layout { flex-direction: column; }
+    .sidebar {
+        position: static;
+        width: 100%;
+        height: auto;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+    .sidebar-logo {
+        border-bottom: none;
+        border-right: 1px solid #334155;
+        padding: 12px 16px;
+        flex-shrink: 0;
+    }
+    .sidebar-nav {
+        display: flex;
+        flex-wrap: wrap;
+        padding: 6px;
+        gap: 2px;
+        flex: 1 1 100%;
+    }
+    /* 横並びでは区切りラベルを隠す */
+    .nav-section { display: none; }
+    .sidebar-nav a {
+        border-left: none;
+        border-radius: 6px;
+        padding: 8px 12px;
+    }
+    .sidebar-nav a.active { border-left: none; }
+    .sidebar-footer { border-top: none; margin-left: auto; padding: 8px 16px; }
+    .main { margin-left: 0; }
+
+    /* 2カラムフォーム・送信画面の左右分割を1カラムに */
+    .form-row { grid-template-columns: 1fr; }
+}
+
+/* スマホ: 余白を詰め、ボタン/検索を縦積みに */
+@media (max-width: 560px) {
+    .content { padding: 16px; }
+    .topbar { padding: 0 16px; }
+    .stats-grid { grid-template-columns: 1fr 1fr !important; gap: 12px; }
+    .card-body { padding: 16px; }
+    .search-bar { flex-direction: column; align-items: stretch; }
+    .search-bar .form-control { max-width: none; }
+    .search-bar > div { margin-left: 0 !important; }
+    /* 送信画面などの 2カラムグリッドを1カラムに（インラインstyleを上書き） */
+    .content [style*="grid-template-columns:1fr 320px"],
+    .content [style*="grid-template-columns: 1fr 320px"] {
+        grid-template-columns: 1fr !important;
+    }
+    .login-card, .public-card { padding: 28px 22px; }
+}

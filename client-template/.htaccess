@@ -22,6 +22,12 @@ Header always set X-XSS-Protection "1; mode=block"
     Deny from all
 </Files>
 
+# bounce.php もメールパイプ専用（バウンス通知受信）→ HTTP 直接アクセス禁止
+<Files "bounce.php">
+    Order allow,deny
+    Deny from all
+</Files>
+
 # cron スクリプトは外部から直接アクセス禁止
 <Files "cron_*.php">
     Order allow,deny

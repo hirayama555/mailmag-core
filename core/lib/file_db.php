@@ -154,6 +154,38 @@ final class FileDB
         return null;
     }
 
+    /**
+     * ハードバウンスした購読者を原子的にエラー停止（status=0）にする。
+     * email 一致で「現在 status=1（有効）」の行のみ 0 に変更する。
+     * @return string|null 停止した購読者ID。該当なし/既に非有効なら null。
+     */
+    public static function markBounced(string $email): ?string
+    {
+        $needle = strtolower(trim($email));
+        if ($needle === '') return null;
+
+        $bouncedId = null;
+        self::modifyCsvAtomic(
+            DATA_DIR . '/subscribers.csv',
+            ['id','email','name','status','token','created_at','updated_at'],
+            function (array $rows) use ($needle, &$bouncedId) {
+                $changed = false;
+                foreach ($rows as &$row) {
+                    if (strtolower($row['email']) === $needle && $row['status'] === '1') {
+                        $row['status']     = '0';
+                        $row['updated_at'] = date('Y-m-d H:i:s');
+                        $bouncedId = $row['id'];
+                        $changed = true;
+                        break;
+                    }
+                }
+                unset($row);
+                return $changed ? $rows : false; // 変更なしは書き戻さない
+            }
+        );
+        return $bouncedId;
+    }
+
     public static function findByToken(string $token): ?array
     {
         if ($token === '') return null;
