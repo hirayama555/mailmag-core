@@ -8,6 +8,8 @@ $success     = false;
 $error       = '';
 $smtpTestOk  = false;
 $smtpTestMsg = '';
+$imapTestOk  = false;
+$imapTestMsg = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!Token::verifyCsrf($_POST['csrf_token'] ?? '')) {
@@ -76,6 +78,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $admin['smtp_pass'] = (string)$p['smtp_pass'];
             }
 
+            // ----- IMAP受信設定（バウンスポーリング）-----
+            $admin['imap_enabled'] = !empty($p['imap_enabled']);
+            $admin['imap_host']    = trim($p['imap_host'] ?? '');
+            $admin['imap_port']    = max(1, min(65535, (int)($p['imap_port'] ?? 993)));
+            $admin['imap_user']    = trim($p['imap_user'] ?? '');
+            $admin['imap_secure']  = in_array(($p['imap_secure'] ?? 'ssl'), ['ssl', 'tls', ''], true)
+                ? (string)$p['imap_secure']
+                : 'ssl';
+            if (!empty($p['imap_pass'])) {
+                $admin['imap_pass'] = (string)$p['imap_pass'];
+            }
+
             FileDB::saveAdmin($admin);
             $success = true;
 
@@ -96,6 +110,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $smtpTestMsg = $e->getMessage();
                 }
             }
+
+            // IMAP有効時は保存直後に接続テストを行い、即フィードバックする
+            if ($admin['imap_enabled']) {
+                try {
+                    $imapTest = new ImapClient(
+                        (string)$admin['imap_host'],
+                        (int)$admin['imap_port'],
+                        (string)$admin['imap_user'],
+                        (string)($admin['imap_pass'] ?? ''),
+                        (string)$admin['imap_secure']
+                    );
+                    $imapTest->connect();
+                    $imapTest->close();
+                    $imapTestOk = true;
+                } catch (ImapException $e) {
+                    $imapTestMsg = $e->getMessage();
+                }
+            }
         }
     }
 }
@@ -114,6 +146,14 @@ require_once CORE_INCLUDES_DIR . '/header.php';
     <div class="alert alert-danger">
         設定は保存しましたが、<strong>SMTP接続テストに失敗</strong>しました:<br>
         <?= htmlspecialchars($smtpTestMsg, ENT_QUOTES, 'UTF-8') ?>
+    </div>
+<?php endif; ?>
+<?php if ($success && $imapTestOk): ?>
+    <div class="alert alert-success">IMAP接続テストに成功しました。バウンスポーリングの準備が整いました。</div>
+<?php elseif ($success && $imapTestMsg !== ''): ?>
+    <div class="alert alert-danger">
+        設定は保存しましたが、<strong>IMAP接続テストに失敗</strong>しました:<br>
+        <?= htmlspecialchars($imapTestMsg, ENT_QUOTES, 'UTF-8') ?>
     </div>
 <?php endif; ?>
 <?php if ($error): ?>
@@ -270,6 +310,60 @@ require_once CORE_INCLUDES_DIR . '/header.php';
                 </div>
             </div>
             <p class="form-hint">設定を保存すると自動でSMTP接続テストを行います。</p>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header"><h2>IMAP受信設定（バウンスポーリング）</h2></div>
+        <div class="card-body">
+            <div class="form-group">
+                <label class="form-check">
+                    <input type="checkbox" name="imap_enabled" value="1"
+                           <?= !empty($admin['imap_enabled']) ? 'checked' : '' ?>>
+                    IMAPポーリングによるバウンス処理を有効にする
+                </label>
+                <p class="form-hint">メールパイプ（.forward）が使えないサーバー向けの代替方式。bounce専用メールボックスを定期取得して不達購読者を自動停止します。</p>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">IMAPサーバー</label>
+                <input type="text" name="imap_host" class="form-control"
+                       placeholder="例: mail.example.net"
+                       value="<?= htmlspecialchars($admin['imap_host'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">ポート / 暗号化</label>
+                    <div class="form-row">
+                        <input type="number" name="imap_port" class="form-control" min="1" max="65535"
+                               value="<?= (int)($admin['imap_port'] ?? 993) ?>" style="max-width:120px;">
+                        <select name="imap_secure" class="form-control">
+                            <?php $isec = $admin['imap_secure'] ?? 'ssl'; ?>
+                            <option value="ssl" <?= $isec === 'ssl' ? 'selected' : '' ?>>SSL/TLS (993)</option>
+                            <option value="tls" <?= $isec === 'tls' ? 'selected' : '' ?>>STARTTLS (143)</option>
+                            <option value=""    <?= $isec === ''    ? 'selected' : '' ?>>暗号化なし（非推奨）</option>
+                        </select>
+                    </div>
+                    <p class="form-hint">993=SSL が一般的</p>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">IMAPユーザー名</label>
+                    <input type="text" name="imap_user" class="form-control" autocomplete="off"
+                           placeholder="例: bounce@example.net"
+                           value="<?= htmlspecialchars($admin['imap_user'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">IMAPパスワード</label>
+                    <input type="password" name="imap_pass" class="form-control" autocomplete="new-password"
+                           placeholder="<?= !empty($admin['imap_pass']) ? '設定済み（変更時のみ入力）' : 'メールアカウントのパスワード' ?>">
+                    <p class="form-hint">変更しない場合は空欄。<code>data/</code> 内に保存されます（.htaccess で保護）</p>
+                </div>
+            </div>
+            <p class="form-hint">設定を保存すると自動でIMAP接続テストを行います。<code>cron_bounce_imap.php</code> を5分ごとに実行するよう cron に登録してください。</p>
         </div>
     </div>
 

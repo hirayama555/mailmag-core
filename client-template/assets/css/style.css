@@ -542,8 +542,11 @@ tbody tr:last-child td { border-bottom: none; }
 .card { transition: box-shadow var(--transition); }
 
 /* アラートにアイコン的な記号を付け、種別を一目で分かるようにする */
-.alert { display: flex; align-items: flex-start; gap: 8px; }
-.alert::before { font-weight: 700; flex-shrink: 0; }
+/* display:flex にするとテキストノード・<strong>・<code>・<br> が
+   それぞれ独立した flex アイテムになって横並びカラム状態になるため、
+   アイコンは position:absolute で独立させ、本文は通常ブロックフローにする */
+.alert { position: relative; padding-left: 2.2rem; overflow-wrap: break-word; }
+.alert::before { position: absolute; left: 0.3rem; top: 0.75rem; font-weight: 700; line-height: 1; }
 .alert-success::before { content: "\2713"; color: var(--color-success); }   /* ✓ */
 .alert-danger::before  { content: "\26A0"; color: var(--color-danger); }    /* ⚠ */
 .alert-warn::before    { content: "\26A0"; color: var(--color-warn); }      /* ⚠ */

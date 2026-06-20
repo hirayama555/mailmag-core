@@ -81,6 +81,8 @@ spl_autoload_register(function (string $class): void {
         'Mailer'       => 'mail.php',
         'SmtpClient'   => 'smtp.php',
         'SmtpException'=> 'smtp.php',
+        'ImapClient'   => 'imap_client.php',
+        'ImapException'=> 'imap_client.php',
         'Lock'         => 'lock.php',
         'RateLimit'    => 'rate_limit.php',
         'Uuid'         => 'uuid.php',
