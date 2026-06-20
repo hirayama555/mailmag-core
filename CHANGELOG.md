@@ -2,6 +2,17 @@
 
 本プロジェクトの注目すべき変更点をまとめます。フォーマットは [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/) に準拠し、バージョニングは [SemVer](https://semver.org/lang/ja/) に従います。
 
+## [1.6.0] - 2026-06-20
+
+### Added
+- **読者向け 紹介ランディングページ（独立LP）を追加**（`core/app/landing.php` + ルートシェル `client-template/landing.php`）。
+  - ヒーロー / 特徴 / 3ステップ / 数字 / 登録フォーム / フッターで構成した集客用の公開ページ。`register.php`（登録フォーム単体）とは別に、メールマガジンの魅力を訴求して登録へ導く。
+  - **スクロール連動の登場エフェクト**を [AOS（Animate On Scroll）](https://michalsnik.github.io/aos/) で実装（CDN 読み込み・ビルド不要）。各セクションが画面に入った瞬間に `fade-up` / `fade-right` / `zoom-in` で段階的（スタッガー）に登場する。あわせて、ヒーロー背景のゆるいグラデーション・メッシュ移動、スクロールで凝縮する固定ヘッダー、数字の**カウントアップ**（`IntersectionObserver` の自前実装）、アンカーのスムーススクロールを実装。
+  - **登録処理は `register.php` に一本化**。LP のフォームは同一セッションの CSRF トークンを付けて `register.php` へ POST するため、レート制限・enumeration 対策・確認メール送信の既存ロジックをそのまま再利用する（重複実装なし）。
+  - **アクセシビリティ / 堅牢性**: `prefers-reduced-motion: reduce` でアニメーションを抑制。AOS の CDN が読めない場合や JS 無効（`<noscript>`）でも `data-aos` 要素を強制表示し、内容が消えないフォールバックを用意。
+  - LP の HTML/CSS は `core/app/landing.php` に内包したので**コア自動更新の対象**。本文コピーは `<!-- ▼編集 -->` 箇所をクライアントが自由に変更できる。
+  - **既存クライアントは初回のみ `landing.php`（ルートシェル）の手動アップロードが必要**（`open.php` / `media.php` と同様、ルート `*.php` は自動更新対象外）。
+
 ## [1.1.3] - 2026-06-14
 
 ### Security
