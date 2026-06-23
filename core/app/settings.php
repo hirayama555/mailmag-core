@@ -35,12 +35,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $inAdminEmail    = trim($p['admin_email'] ?? '');
         $inReplyTo       = trim($p['reply_to'] ?? '');
         $inRegisterEmail = trim($p['register_email'] ?? '');
+        $inBounceAddr    = trim($p['bounce_address'] ?? '');
         if (!$error) {
             $emailChecks = [
                 '送信元メールアドレス'   => [$inFromEmail,     true],   // 必須
                 '管理者メールアドレス'   => [$inAdminEmail,    false],
                 'Reply-Toアドレス'       => [$inReplyTo,       false],
                 '空メール受信アドレス'   => [$inRegisterEmail, false],
+                'バウンス受信用アドレス' => [$inBounceAddr,    false],
             ];
             foreach ($emailChecks as $label => $spec) {
                 [$val, $required] = $spec;
@@ -61,6 +63,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // reply_to / register_email は空なら送信元にフォールバック（setup.php と同挙動）
             $admin['reply_to']       = $inReplyTo       !== '' ? $inReplyTo       : $inFromEmail;
             $admin['register_email'] = $inRegisterEmail !== '' ? $inRegisterEmail : $inFromEmail;
+            // bounce_address は空欄可。空なら Mailer 側で from_email にフォールバックする
+            // ため、ここでは入力値（空含む）をそのまま保存する。
+            $admin['bounce_address'] = $inBounceAddr;
             $admin['batch_size']     = max(10, min(500, (int)($p['batch_size'] ?? 100)));
             $admin['send_interval']  = max(0, min(5, (float)($p['send_interval'] ?? 0.1)));
             $admin['footer_text']    = $p['footer_text'] ?? '';
@@ -216,6 +221,17 @@ require_once CORE_INCLUDES_DIR . '/header.php';
                            value="<?= htmlspecialchars($admin['register_email'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
                     <p class="form-hint">レンタルサーバーで受信パイプに設定するアドレス</p>
                 </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">バウンス受信用アドレス（Return-Path）</label>
+                <input type="email" name="bounce_address" class="form-control"
+                       placeholder="例: bounce@example.net"
+                       value="<?= htmlspecialchars($admin['bounce_address'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
+                <p class="form-hint">
+                    空欄の場合は送信元と同じ。設定すると<strong>配送失敗通知（バウンス）だけがこのアドレスに届く</strong>ため、
+                    通常の受信箱が大量のエラーメールで埋まるのを防げます。見える差出人（From）は送信元のまま変わりません。<br>
+                    ここで指定したアドレスを、下の<strong>IMAP受信設定</strong>のメールボックスとして設定してください。
+                </p>
             </div>
             <div class="form-group">
                 <label class="form-label">メールフッター</label>

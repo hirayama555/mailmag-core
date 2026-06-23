@@ -8,6 +8,10 @@ $errors  = [];
 $skipped = 0;
 $mode    = 'single';
 
+// 一括メンテナンス（停止・削除）の結果。null = 未実行。
+$suppressResult = null;   // ['suppressed'=>int,'skipped'=>int]
+$deletedCount   = null;   // Yahoo 系 物理削除件数
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!Token::verifyCsrf($_POST['csrf_token'] ?? '')) {
         $errors[] = '不正なリクエストです。';
@@ -76,6 +80,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
             }
+        } elseif ($mode === 'suppress_csv') {
+            // 既知の不達アドレス一覧（NowGetter 等）を一括エラー停止する。
+            // 追加用 CSV と同じく 1 列目をメールアドレスとして読む。
+            $up      = $_FILES['suppress_file'] ?? null;
+            $upError = $up['error'] ?? UPLOAD_ERR_NO_FILE;
+            if ($upError !== UPLOAD_ERR_OK) {
+                $uploadMessages = [
+                    UPLOAD_ERR_INI_SIZE   => 'ファイルサイズがサーバーの上限（upload_max_filesize）を超えています。',
+                    UPLOAD_ERR_FORM_SIZE  => 'ファイルサイズが上限を超えています。',
+                    UPLOAD_ERR_PARTIAL    => 'ファイルが途中までしかアップロードされませんでした。再度お試しください。',
+                    UPLOAD_ERR_NO_FILE    => 'ファイルが選択されていません。停止対象のCSVを選んでください。',
+                    UPLOAD_ERR_NO_TMP_DIR => 'サーバーに一時保存先がありません。サーバー管理者にご確認ください。',
+                    UPLOAD_ERR_CANT_WRITE => 'サーバーへの書き込みに失敗しました。',
+                    UPLOAD_ERR_EXTENSION  => 'PHP拡張によりアップロードが中断されました。',
+                ];
+                $errors[] = $uploadMessages[$upError] ?? ('ファイルのアップロードに失敗しました（コード: ' . (int)$upError . '）。');
+            } else {
+                $fp = fopen($up['tmp_name'], 'r');
+                if (!$fp) {
+                    $errors[] = 'CSVファイルを読み込めませんでした。';
+                } else {
+                    $emails  = [];
+                    $lineNum = 0;
+                    while (($row = fgetcsv($fp)) !== false) {
+                        $lineNum++;
+                        if ($lineNum === 1) continue; // ヘッダー行
+                        $email = isset($row[0]) ? trim($row[0]) : '';
+                        $email = preg_replace('/^\xEF\xBB\xBF/', '', $email); // BOM除去
+                        if ($email !== '') $emails[] = $email;
+                    }
+                    fclose($fp);
+
+                    if (empty($emails)) {
+                        $errors[] = 'CSVから停止対象のアドレスを読み取れませんでした（1列目=メールアドレス／1行目はヘッダー）。';
+                    } else {
+                        $suppressResult = FileDB::suppressEmailsBulk($emails);
+                    }
+                }
+            }
+        } elseif ($mode === 'suppress_yahoo') {
+            // Yahoo 系（EXCLUDE_DOMAINS）を配信リストから物理削除する。
+            $deletedCount = FileDB::deleteByDomains(mailmag_excluded_domains());
         } else {
             $email = trim($_POST['email'] ?? '');
             $name  = trim($_POST['name']  ?? '');
@@ -110,6 +156,18 @@ require_once CORE_INCLUDES_DIR . '/header.php';
 <?php if ($success > 0): ?>
     <div class="alert alert-success">
         <?= number_format($success) ?>件の購読者を追加しました。<?php if ($skipped > 0): ?>（重複・不正でスキップ: <?= number_format($skipped) ?>件）<?php endif; ?>
+        <a href="<?= SITE_URL ?>subscribers.php">購読者一覧へ</a>
+    </div>
+<?php endif; ?>
+<?php if ($suppressResult !== null): ?>
+    <div class="alert alert-success">
+        <?= number_format($suppressResult['suppressed']) ?>件をエラー停止しました。<?php if ($suppressResult['skipped'] > 0): ?>（未登録・既に停止/解除済みでスキップ: <?= number_format($suppressResult['skipped']) ?>件）<?php endif; ?>
+        <a href="<?= SITE_URL ?>subscribers.php?status=0">エラー停止一覧へ</a>
+    </div>
+<?php endif; ?>
+<?php if ($deletedCount !== null): ?>
+    <div class="alert alert-success">
+        Yahoo系アドレスを <?= number_format($deletedCount) ?>件 削除しました。<?php if ($deletedCount === 0): ?>（該当なし）<?php endif; ?>
         <a href="<?= SITE_URL ?>subscribers.php">購読者一覧へ</a>
     </div>
 <?php endif; ?>
@@ -162,6 +220,56 @@ require_once CORE_INCLUDES_DIR . '/header.php';
         </div>
     </div>
 
+</div>
+
+<div class="card mt-4">
+    <div class="card-header"><h2>一括メンテナンス（不達停止・Yahoo削除）</h2></div>
+    <div class="card-body">
+        <div class="alert alert-info">
+            大量配信の前に、<strong>既に不達と分かっているアドレスを停止</strong>したり、
+            <strong>配信できないドメインを削除</strong>してリストを浄化します。
+            送信レピュテーション（迷惑メール判定）の悪化を防ぐために重要です。
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+
+            <div>
+                <h3 style="margin-top:0;">不達アドレスを一括エラー停止</h3>
+                <p class="form-hint">
+                    NowGetter 等で既にエラーと判明しているアドレス一覧（CSV）を取り込み、
+                    該当する有効購読者を<strong>エラー停止（status: 0）</strong>にします。削除はしません（後から復元可能）。<br>
+                    CSV は <code>1列目=メールアドレス</code>、1行目はヘッダーとして読み飛ばします。
+                </p>
+                <form method="post" enctype="multipart/form-data">
+                    <input type="hidden" name="csrf_token" value="<?= Token::getCsrf() ?>">
+                    <input type="hidden" name="mode" value="suppress_csv">
+                    <div class="form-group">
+                        <label class="form-label">停止対象CSV<span class="required">*</span></label>
+                        <input type="file" name="suppress_file" class="form-control" accept=".csv" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">CSVから一括停止</button>
+                </form>
+            </div>
+
+            <div>
+                <h3 style="margin-top:0;">Yahoo系アドレスを一括削除</h3>
+                <p class="form-hint">
+                    対象ドメイン:
+                    <code><?= htmlspecialchars(str_replace(',', ' / ', EXCLUDE_DOMAINS), ENT_QUOTES, 'UTF-8') ?></code><br>
+                    これらは送信者レピュテーション（SGS）により一括配信が拒否されるため、
+                    配信リストから<strong>物理削除</strong>します（別経路で配信する想定）。
+                    削除前に自動でバックアップ（<code>.bak</code>）を取得します。
+                </p>
+                <form method="post"
+                      onsubmit="return confirm('Yahoo系（<?= htmlspecialchars(str_replace(',', ' / ', EXCLUDE_DOMAINS), ENT_QUOTES, 'UTF-8') ?>）のアドレスを配信リストから削除します。よろしいですか？');">
+                    <input type="hidden" name="csrf_token" value="<?= Token::getCsrf() ?>">
+                    <input type="hidden" name="mode" value="suppress_yahoo">
+                    <button type="submit" class="btn btn-danger">Yahoo系を一括削除</button>
+                </form>
+            </div>
+
+        </div>
+    </div>
 </div>
 
 <?php require_once CORE_INCLUDES_DIR . '/footer.php'; ?>

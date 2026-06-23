@@ -2,6 +2,22 @@
 
 本プロジェクトの注目すべき変更点をまとめます。フォーマットは [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/) に準拠し、バージョニングは [SemVer](https://semver.org/lang/ja/) に従います。
 
+## [1.7.0] - 2026-06-23
+
+### Added
+- **`core/lib/mail.php` / `core/app/settings.php`: バウンスの戻り先（Return-Path / Envelope-From）を専用アドレスに分離できる「バウンス受信用アドレス」設定を追加。**
+  - これまで Envelope-From は送信元（`from_email`）固定で、配送失敗通知（バウンス）が店頭運用の受信箱に大量流入していた。システム設定の「バウンス受信用アドレス（Return-Path）」に `bounce@example.net` 等を指定すると、`mail()` 経路（`-f`）と SMTP 経路（`MAIL FROM`）の両方でそのアドレスを Envelope-From に使い、バウンスだけを専用メールボックスに隔離できる。
+  - **見える差出人（`From:`）と返信先（`Reply-To:`）は従来どおり `from_email` のまま**変わらない。バウンス回収先（`bounce@`）と同一ドメインであれば SPF alignment（DMARC pass）も維持される。
+  - 空欄時は従来どおり `from_email` にフォールバック（後方互換）。`IMAP受信設定`をこのアドレスのメールボックスに向けて運用する。
+- **`core/lib/file_db.php` / `core/app/subscriber_add.php`: 購読者の一括メンテナンス（不達一括停止・Yahoo一括削除）を追加。**
+  - **不達アドレスの一括エラー停止（`FileDB::suppressEmailsBulk()`）**: NowGetter 等で既に不達と判明しているアドレス一覧（CSV）を取り込み、該当する有効購読者を一括で「エラー停止（status 0）」にする。次の大量配信前に既知の不達へ再送するのを防ぎ、送信レピュテーション悪化を回避する。1 回の `LOCK_EX` 内で処理する O(N+M) 実装。
+  - **Yahoo系ドメインの一括物理削除（`FileDB::deleteByDomains()`）**: `EXCLUDE_DOMAINS`（`yahoo.co.jp` / `yahoo.ne.jp` / `ybb.ne.jp`）に一致する購読者を配信リストから物理削除する。削除前に `.bak` 退避。
+  - UI は「購読者追加」ページに「一括メンテナンス」カードとして追加（新規ページを作らず既存ルートに同梱したため、自動更新だけで配信される）。
+
+### Operational impact
+- 本リリースの変更は**すべて `core/` 配下**（自動更新対象）。ルートシェルや手動アップロードは不要で、既存クライアントは毎日の自動更新で機能が反映される。
+- バウンス隔離を有効化するには、クライアント側で (1)「バウンス受信用アドレス」を設定、(2) `IMAP受信設定`を同アドレスのメールボックスに向ける、(3) `cron_bounce_imap.php` を cron 登録、の運用作業が必要。
+
 ## [1.6.0] - 2026-06-23
 
 ### Added

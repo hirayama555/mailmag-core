@@ -235,6 +235,91 @@ final class FileDB
         return $bouncedId;
     }
 
+    /**
+     * email 群を「1回の原子的読み書き」で一括エラー停止（status 1→0）にする。
+     *
+     * NowGetter 等の外部システムが既に把握している不達アドレス一覧を、
+     * 次の大量配信の前にまとめて停止する用途。1件ずつ markBounced を呼ぶと
+     * CSV 全体の read-modify-write が件数分走り O(N*M) になるため、
+     * addSubscribersBulk と同様に 1 回の LOCK_EX 内で O(N+M) に抑える。
+     *
+     * @param array<int,string> $emails 停止対象メールアドレス（大小・前後空白は無視）
+     * @return array{suppressed:int,skipped:int}
+     *         suppressed = 実際に 1→0 にした件数 /
+     *         skipped    = 入力のうち未登録・既に非有効でスキップした件数
+     */
+    public static function suppressEmailsBulk(array $emails): array
+    {
+        // 入力を正規化（小文字・トリム・空除去・重複排除）して集合化
+        $targets = [];
+        foreach ($emails as $e) {
+            $key = strtolower(trim((string)$e));
+            if ($key !== '') $targets[$key] = true;
+        }
+        if (empty($targets)) return ['suppressed' => 0, 'skipped' => 0];
+
+        $suppressed = 0;
+        self::modifyCsvAtomic(
+            DATA_DIR . '/subscribers.csv',
+            ['id','email','name','status','token','created_at','updated_at'],
+            function (array $rows) use ($targets, &$suppressed) {
+                foreach ($rows as &$row) {
+                    $key = strtolower($row['email'] ?? '');
+                    if (isset($targets[$key]) && ($row['status'] ?? '') === '1') {
+                        $row['status']     = '0';
+                        $row['updated_at'] = date('Y-m-d H:i:s');
+                        $suppressed++;
+                    }
+                }
+                unset($row);
+                return $suppressed > 0 ? $rows : false; // 1件も変更なしなら書き戻さない
+            }
+        );
+        return [
+            'suppressed' => $suppressed,
+            'skipped'    => count($targets) - $suppressed,
+        ];
+    }
+
+    /**
+     * 指定ドメイン群に一致する購読者を「1回の原子的読み書き」で物理削除する。
+     *
+     * Yahoo 系（EXCLUDE_DOMAINS）のように恒久的に別経路へ回すアドレスを
+     * 配信リストから取り除く用途。modifyCsvAtomic が削除前に .bak へ退避するため
+     * 誤操作時は直前状態へ復旧できる。
+     *
+     * @param array<int,string> $domains 削除対象ドメイン（@ 以降, 小文字想定）
+     * @return int 削除した件数
+     */
+    public static function deleteByDomains(array $domains): int
+    {
+        // ドメインを正規化して集合化（O(1) 判定）
+        $set = [];
+        foreach ($domains as $d) {
+            $key = strtolower(trim((string)$d));
+            if ($key !== '') $set[$key] = true;
+        }
+        if (empty($set)) return 0;
+
+        $deleted = 0;
+        self::modifyCsvAtomic(
+            DATA_DIR . '/subscribers.csv',
+            ['id','email','name','status','token','created_at','updated_at'],
+            function (array $rows) use ($set, &$deleted) {
+                $kept = [];
+                foreach ($rows as $row) {
+                    if (isset($set[mailmag_email_domain($row['email'] ?? '')])) {
+                        $deleted++;
+                        continue; // この行は削除
+                    }
+                    $kept[] = $row;
+                }
+                return $deleted > 0 ? $kept : false; // 該当なしは書き戻さない
+            }
+        );
+        return $deleted;
+    }
+
     public static function findByToken(string $token): ?array
     {
         if ($token === '') return null;

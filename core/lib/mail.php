@@ -123,16 +123,27 @@ final class Mailer
             $headers .= "List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n";
         }
 
+        // Envelope-From（Return-Path）を決定する。
+        // bounce_address が設定され妥当ならそれを使い、バウンス（配送失敗通知）を
+        // 専用メールボックスに隔離する（見える From: は from_email のまま）。
+        // 未設定・不正なら従来どおり from_email にフォールバック（後方互換）。
+        $bounceAddr   = (string)($this->admin['bounce_address'] ?? '');
+        $envelopeFrom = ($bounceAddr !== ''
+                && filter_var($bounceAddr, FILTER_VALIDATE_EMAIL)
+                && !preg_match('/[\r\n]/', $bounceAddr))
+            ? $bounceAddr
+            : $fromEmail;
+
         // SMTP送信が有効なら SMTP Auth 経由で送る（DKIM署名を得るため）。
         // 無効なら従来どおり mail() を使う（既存クライアントの後方互換）。
         if ($this->smtpEnabled()) {
-            return $this->sendViaSmtp($to, $encodedSubject, $headers, $body, $fromEmail);
+            return $this->sendViaSmtp($to, $encodedSubject, $headers, $body, $fromEmail, $envelopeFrom);
         }
 
         // Envelope-From を明示し、SPF alignment（DMARC pass）を成立させる。
-        // $fromEmail は FILTER_VALIDATE_EMAIL + CR/LF チェック済み。
+        // $envelopeFrom は from_email または検証済み bounce_address。
         // 万一の混入に備え escapeshellarg で防御を多層化。
-        $additionalParams = '-f' . escapeshellarg($fromEmail);
+        $additionalParams = '-f' . escapeshellarg($envelopeFrom);
 
         return mail($to, $encodedSubject, $body, $headers, $additionalParams);
     }
@@ -167,13 +178,18 @@ final class Mailer
     /**
      * SMTP Auth 経由で1通送信する。
      * mail() と異なり To / Subject / Date / Message-ID も自前でヘッダーに含める。
+     *
+     * @param string $fromEmail    見える差出人（Message-ID のドメイン導出に使用）
+     * @param string $envelopeFrom Envelope-From（MAIL FROM / Return-Path）。
+     *                             bounce_address 設定時はバウンス回収用アドレス。
      */
     private function sendViaSmtp(
         string $to,
         string $encodedSubject,
         string $headers,
         string $body,
-        string $fromEmail
+        string $fromEmail,
+        string $envelopeFrom
     ): bool {
         try {
             $domainPart = strrchr($fromEmail, '@');
@@ -191,7 +207,9 @@ final class Mailer
             $raw .= "\r\n";          // ヘッダーと本文の境界
             $raw .= $body;
 
-            return $this->smtp()->send($fromEmail, [$to], $raw);
+            // MAIL FROM に envelopeFrom を渡す。受信側 MTA がこれを Return-Path
+            // ヘッダーとして付与し、バウンスはこのアドレス宛に返る。
+            return $this->smtp()->send($envelopeFrom, [$to], $raw);
         } catch (SmtpException $e) {
             @file_put_contents(
                 DATA_DIR . '/send_error.log',
