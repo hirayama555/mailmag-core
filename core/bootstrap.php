@@ -51,6 +51,12 @@ defined('QUEUE_CHECKPOINT_EVERY') or define('QUEUE_CHECKPOINT_EVERY', 25);
 defined('SESSION_NAME')    or define('SESSION_NAME',    'mailmag_sess');
 defined('SESSION_LIFETIME')or define('SESSION_LIFETIME', 3600);
 
+// メール送信から除外できるドメイン（カンマ区切り）。
+// Yahoo は SGS（送信者レピュテーション）により一括配信が拒否されることがあるため、
+// 作成ページのチェックで対象から外し、別経路（NowGetter 等）に回せるようにする。
+// 将来 ymail.ne.jp 等を足したい場合はクライアント config.php で上書きする。
+defined('EXCLUDE_DOMAINS') or define('EXCLUDE_DOMAINS', 'yahoo.co.jp,yahoo.ne.jp,ybb.ne.jp');
+
 // 派生パス（クライアント config.php で個別定義されていない場合のみ）
 defined('HISTORY_DIR') or define('HISTORY_DIR', DATA_DIR . '/history');
 defined('QUEUE_DIR')   or define('QUEUE_DIR',   DATA_DIR . '/send_queue');
@@ -71,6 +77,19 @@ defined('UPLOAD_TOTAL_MAX_BYTES') or define('UPLOAD_TOTAL_MAX_BYTES', 100 * 1024
 date_default_timezone_set('Asia/Tokyo');
 mb_internal_encoding('UTF-8');
 mb_language('Japanese');
+
+// ---- ドメイン除外ヘルパー -----------------------------------
+// メールアドレスのドメイン部（@ 以降）を小文字で返す。@ が無ければ空文字。
+function mailmag_email_domain(string $email): string
+{
+    $at = strrchr($email, '@');
+    return $at === false ? '' : strtolower(substr($at, 1));
+}
+// EXCLUDE_DOMAINS を正規化した配列で返す（小文字・トリム・空要素除去）。
+function mailmag_excluded_domains(): array
+{
+    return array_values(array_filter(array_map('trim', explode(',', strtolower(EXCLUDE_DOMAINS)))));
+}
 
 // ---- autoload ----------------------------------------------
 spl_autoload_register(function (string $class): void {

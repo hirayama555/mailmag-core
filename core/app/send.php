@@ -7,6 +7,17 @@ $admin     = FileDB::getAdmin();
 $templates = FileDB::getTemplates();
 $counts    = FileDB::countByStatus();
 
+// 除外対象ドメイン（Yahoo 等）に該当する「有効購読者」数を算出（UI 表示用）。
+// 作成ページで除外チェックを入れたとき何件が外れるかを事前に示す。
+$excludedDomains = mailmag_excluded_domains();
+$yahooCount = 0;
+foreach (FileDB::getSubscribers() as $s) {
+    if (($s['status'] ?? '') === '1'
+        && in_array(mailmag_email_domain($s['email'] ?? ''), $excludedDomains, true)) {
+        $yahooCount++;
+    }
+}
+
 // テンプレート読み込み
 $prefill = [];
 if (!empty($_GET['tpl'])) {
@@ -23,6 +34,8 @@ if (!empty($_GET['history_id'])) {
 // 復元したらすぐ破棄（ワンタイム）。ブラウザ更新で古い下書きが蒸し返さないようにする。
 $draftTestEmail      = '';
 $draftScheduleType   = 'now';
+// 除外チェックの既定は ON（現運用では毎回 Yahoo を外す）。下書き復元時はその選択を踏襲。
+$excludeYahooChecked = true;
 $htmlModeChecked     = !empty($prefill['html_body']);
 // 開封計測は既定 ON。履歴からの再送時は元の選択を踏襲する。
 $openTrackingChecked = array_key_exists('open_tracking', $prefill)
@@ -39,6 +52,7 @@ if (!empty($_SESSION['send_draft'])) {
     $openTrackingChecked     = !empty($draft['open_tracking']);
     $draftTestEmail          = $draft['test_email']    ?? '';
     $draftScheduleType       = $draft['schedule_type'] ?? 'now';
+    $excludeYahooChecked     = !empty($draft['exclude_yahoo']);
 }
 
 // クエリパラメータによるフラッシュメッセージ
@@ -187,6 +201,17 @@ require_once CORE_INCLUDES_DIR . '/header.php';
                         エラー停止（<?= number_format($counts['stopped']) ?>件）・
                         購読解除（<?= number_format($counts['unsubscribed']) ?>件）は除外されます。
                     </p>
+
+                    <div class="form-group" style="margin-top:12px;padding-top:12px;border-top:1px solid #e5e7eb;">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;">
+                            <input type="checkbox" name="exclude_yahoo" value="1"
+                                   <?= $excludeYahooChecked ? 'checked' : '' ?>>
+                            Yahoo（<?= htmlspecialchars(str_replace(',', ' / ', EXCLUDE_DOMAINS), ENT_QUOTES, 'UTF-8') ?>）を除外
+                        </label>
+                        <p class="text-muted" style="font-size:12px;margin-top:6px;">
+                            該当 <?= number_format($yahooCount) ?>件。Yahoo は別経路（NowGetter 等）で配信する場合にチェックしてください。
+                        </p>
+                    </div>
                 </div>
             </div>
 

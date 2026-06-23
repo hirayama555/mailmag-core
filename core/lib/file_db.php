@@ -145,6 +145,55 @@ final class FileDB
         return $ok && $added;
     }
 
+    /**
+     * 複数購読者を「1回の原子的読み書き」で一括追加する。
+     *
+     * CSV インポートで 1 件ずつ addSubscriberIfNew を呼ぶと、件数分だけ
+     * CSV 全体の read-modify-write（ロック→全行読込→全行書き戻し）が走り
+     * O(N^2) でファイル I/O が膨張、件数が多いと 504 タイムアウトする。
+     * 本メソッドは 1 回の LOCK_EX 内で「既存＋バッチ内の重複（email・大小無視）を
+     * 弾きつつ新規行をまとめて追記」し、計算量を O(N+M) に抑える。
+     *
+     * @param array<int,array<string,mixed>> $subs 各要素は
+     *        id/email/name/status/token/created_at/updated_at を含むこと。
+     * @return int 実際に追加できた件数
+     */
+    public static function addSubscribersBulk(array $subs): int
+    {
+        if (empty($subs)) return 0;
+
+        $added = 0;
+        self::modifyCsvAtomic(
+            DATA_DIR . '/subscribers.csv',
+            ['id','email','name','status','token','created_at','updated_at'],
+            function (array $rows) use ($subs, &$added) {
+                // 既存 email を集合化（小文字キー）→ 重複判定を O(1) に
+                $seen = [];
+                foreach ($rows as $r) {
+                    $seen[strtolower($r['email'] ?? '')] = true;
+                }
+                foreach ($subs as $sub) {
+                    $email = trim((string)($sub['email'] ?? ''));
+                    $key   = strtolower($email);
+                    if ($key === '' || isset($seen[$key])) continue; // 空 or 既存/バッチ内重複
+                    $seen[$key] = true;
+                    $rows[] = [
+                        'id'         => $sub['id'],
+                        'email'      => $email,
+                        'name'       => $sub['name'] ?? '',
+                        'status'     => $sub['status'] ?? '1',
+                        'token'      => $sub['token'],
+                        'created_at' => $sub['created_at'],
+                        'updated_at' => $sub['updated_at'] ?? $sub['created_at'],
+                    ];
+                    $added++;
+                }
+                return $added > 0 ? $rows : false; // 1件も追加なしなら書き戻さない
+            }
+        );
+        return $added;
+    }
+
     public static function findByEmail(string $email): ?array
     {
         $needle = strtolower($email);
@@ -541,6 +590,14 @@ final class FileDB
             }
 
             // ---- 書き戻し ----
+            // ftruncate→書き直しは「書き込み途中でプロセスが落ちると
+            // ファイルが空のまま残る（＝全データ消失）」非クラッシュ安全な操作。
+            // ロック方式（LOCK_EX on $fp）は据え置きで直列性を保ったまま、
+            // 書き込み直前に現在の内容を .bak へ退避しておく。万一書き込み途中で
+            // プロセスが落ちても、.bak から直前状態を復旧できる。
+            if (filesize($path) > 0) {
+                @copy($path, $path . '.bak');
+            }
             rewind($fp);
             ftruncate($fp, 0);
             fputcsv($fp, $header);

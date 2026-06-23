@@ -47,6 +47,7 @@ function saveSendDraft(): void
         'test_email'    => trim($_POST['test_email'] ?? ''),
         'schedule_type' => $_POST['schedule_type'] ?? 'now',
         'scheduled_at'  => $_POST['scheduled_at']  ?? '',
+        'exclude_yahoo' => !empty($_POST['exclude_yahoo']),
     ];
 }
 
@@ -131,6 +132,19 @@ $subs = array_values(array_filter(
     fn($s) => $s['status'] === '1'
 ));
 
+// 除外ドメイン（Yahoo 等）のフィルタ。作成ページのチェックON時のみ適用する。
+// ここで絞り込むことで、以降のキュー・履歴の total_count が「実配信数」になり、
+// cron 側のバッチ処理は一切変更不要となる。
+$excludeYahoo = !empty($_POST['exclude_yahoo']);
+if ($excludeYahoo) {
+    $blockedDomains = mailmag_excluded_domains();
+    $subs = array_values(array_filter(
+        $subs,
+        fn($s) => !in_array(mailmag_email_domain($s['email'] ?? ''), $blockedDomains, true)
+    ));
+}
+
+// 空チェックは除外フィルタ後に行う（有効購読者が全員 Yahoo だった場合も拾うため）
 if (empty($subs)) {
     saveSendDraft();
     header('Location: ' . SITE_URL . 'send.php?err=no_subscribers');

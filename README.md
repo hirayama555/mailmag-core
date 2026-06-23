@@ -47,12 +47,13 @@ mailmag-core/
 
 ## バージョン
 
-最新リリース: [**v1.5.0**](https://github.com/hirayama555/mailmag-core/releases/latest)（IMAPポーリングによるバウンス処理）
+最新リリース: [**v1.6.0**](https://github.com/hirayama555/mailmag-core/releases/latest)（Yahoo 除外オプション）
 
 各クライアントの稼働バージョンは `core/VERSION` で確認できます。
 
 直近の主な変更点:
 
+- **v1.6.0** — (1) メルマガ作成ページに **Yahoo 除外オプション**を追加（既定 ON）。`yahoo.co.jp` / `yahoo.ne.jp` / `ybb.ne.jp` は SGS（送信者レピュテーション）による一括配信拒否が起こりやすいため、送信対象から除外して別経路（NowGetter 等）に回せるようにする。除外はキュー構築時に適用するため履歴の `total_count` が実配信数になり、`cron_queue.php` は変更不要。除外ドメインは `core/bootstrap.php` の `EXCLUDE_DOMAINS` 定数で一元管理し、`config.php` で上書き可能。(2) **購読者 CSV 一括インポートを高速化**（`FileDB::addSubscribersBulk()`）。1 行ごとの read-modify-write による O(N²)・504 タイムアウトを、1 回の原子的書き込みで O(N+M) に改善。あわせて CSV 書き戻し前の `.bak` 退避でクラッシュ時のデータ消失を防止し、インポート用テンプレート（`docs/subscribers_import_template.csv`）を追加。**変更はすべて `core/` 配下のため自動更新で反映され、手動アップロードは不要。**
 - **v1.5.0** — **IMAP ポーリングによるバウンス処理**を追加（`cron_bounce_imap.php`）。メールパイプ（`.forward` / `bounce.php`）が利用できないカゴヤ等の共用ホスティング向けの代替手段として、bounce 専用メールボックスに IMAP で定期接続し、未読バウンス通知を取得・解析・削除する。php-imap 拡張不要（SmtpClient と同様に raw socket 実装）。ハードバウンス（5.x.x）は購読者を自動「エラー停止」、ソフトバウンス（4.x.x）は `data/bounce.log` に記録のみ（v1.4.0 の bounce.php と完全に同等の解析ロジック）。管理画面「システム設定 → IMAP受信設定」で接続情報を入力・保存するだけで接続テストまで完了。**既存クライアントは `cron_bounce_imap.php`（ルートシェル）の手動アップロードと cron 追加が必要。**
 - **v1.4.0** — (1) **バウンス自動処理**を追加。配信不達の通知メールをメールパイプ（`bounce.php`）で受信し、ハードバウンス（恒久エラー 5.x.x／ユーザー不明等）した宛先の購読者を自動で「エラー停止」にして次回配信から除外。ソフトバウンス（一時エラー 4.x.x）は `data/bounce.log` に記録のみ。RFC3464 DSN を最優先し、素朴な本文バウンスもフォールバック解析。(2) **管理UIの質感向上**: ログイン/setup の洗練、`stat-card` のアクセントライン、ボタンの押下フィードバック、`:focus-visible` によるキーボード操作のフォーカス可視化、アラートのアイコン、そして**レスポンシブ対応**（狭幅でサイドバーを上部ナビに、グリッドを1カラムに）。(3) ドキュメント整合: `docs/UPGRADE.md` の手動更新コマンド（`unzip -d core/`）修正と、ルート `*.php` が自動更新対象外である旨の明記。**※ バウンスは `bounce.php`、UIは `assets/css/style.css` の初回手動アップロードが必要（いずれも自動更新対象外）。**
 - **v1.3.4** — 堅牢化（バグ監査バッチB・残LOW 5件）。(1) Reply-To アドレスが空のとき空ヘッダを送出していたのを修正（送信元にフォールバックし、空なら出力しない）。(2) 空メール登録のFrom表示名デコードを `mb_decode_mimeheader` に委譲し、Qエンコード破損とPHP8での未捕捉例外を解消。(3) 空メール登録の保留追加を原子的 `addPendingIfNew` に統一（重複行・確認メール多重送信の競合を解消）。(4) 画像アップロードの合計容量チェックをロックで直列化しTOCTOUを回避。(5) 未認証時の画像API応答をHTMLリダイレクトでなく `401 + JSON` に変更（セッション切れ時の誤メッセージを解消）。
