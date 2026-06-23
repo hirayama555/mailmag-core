@@ -9,8 +9,9 @@ $skipped = 0;
 $mode    = 'single';
 
 // 一括メンテナンス（停止・削除）の結果。null = 未実行。
-$suppressResult = null;   // ['suppressed'=>int,'skipped'=>int]
-$deletedCount   = null;   // Yahoo 系 物理削除件数
+$suppressResult    = null;   // ['suppressed'=>int,'skipped'=>int]
+$unsubscribeResult = null;   // ['unsubscribed'=>int,'skipped'=>int]
+$deletedCount      = null;   // Yahoo 系 物理削除件数
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!Token::verifyCsrf($_POST['csrf_token'] ?? '')) {
@@ -119,6 +120,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
             }
+        } elseif ($mode === 'unsubscribe_csv') {
+            // 外部システム（NowGetter 等）で購読解除された読者一覧を一括購読解除する。
+            // 停止用 CSV と同じく 1 列目をメールアドレスとして読む。
+            $up      = $_FILES['unsubscribe_file'] ?? null;
+            $upError = $up['error'] ?? UPLOAD_ERR_NO_FILE;
+            if ($upError !== UPLOAD_ERR_OK) {
+                $uploadMessages = [
+                    UPLOAD_ERR_INI_SIZE   => 'ファイルサイズがサーバーの上限（upload_max_filesize）を超えています。',
+                    UPLOAD_ERR_FORM_SIZE  => 'ファイルサイズが上限を超えています。',
+                    UPLOAD_ERR_PARTIAL    => 'ファイルが途中までしかアップロードされませんでした。再度お試しください。',
+                    UPLOAD_ERR_NO_FILE    => 'ファイルが選択されていません。購読解除対象のCSVを選んでください。',
+                    UPLOAD_ERR_NO_TMP_DIR => 'サーバーに一時保存先がありません。サーバー管理者にご確認ください。',
+                    UPLOAD_ERR_CANT_WRITE => 'サーバーへの書き込みに失敗しました。',
+                    UPLOAD_ERR_EXTENSION  => 'PHP拡張によりアップロードが中断されました。',
+                ];
+                $errors[] = $uploadMessages[$upError] ?? ('ファイルのアップロードに失敗しました（コード: ' . (int)$upError . '）。');
+            } else {
+                $fp = fopen($up['tmp_name'], 'r');
+                if (!$fp) {
+                    $errors[] = 'CSVファイルを読み込めませんでした。';
+                } else {
+                    $emails  = [];
+                    $lineNum = 0;
+                    while (($row = fgetcsv($fp)) !== false) {
+                        $lineNum++;
+                        if ($lineNum === 1) continue; // ヘッダー行
+                        $email = isset($row[0]) ? trim($row[0]) : '';
+                        $email = preg_replace('/^\xEF\xBB\xBF/', '', $email); // BOM除去
+                        if ($email !== '') $emails[] = $email;
+                    }
+                    fclose($fp);
+
+                    if (empty($emails)) {
+                        $errors[] = 'CSVから購読解除対象のアドレスを読み取れませんでした（1列目=メールアドレス／1行目はヘッダー）。';
+                    } else {
+                        $unsubscribeResult = FileDB::unsubscribeEmailsBulk($emails);
+                    }
+                }
+            }
         } elseif ($mode === 'suppress_yahoo') {
             // Yahoo 系（EXCLUDE_DOMAINS）を配信リストから物理削除する。
             $deletedCount = FileDB::deleteByDomains(mailmag_excluded_domains());
@@ -163,6 +203,12 @@ require_once CORE_INCLUDES_DIR . '/header.php';
     <div class="alert alert-success">
         <?= number_format($suppressResult['suppressed']) ?>件をエラー停止しました。<?php if ($suppressResult['skipped'] > 0): ?>（未登録・既に停止/解除済みでスキップ: <?= number_format($suppressResult['skipped']) ?>件）<?php endif; ?>
         <a href="<?= SITE_URL ?>subscribers.php?status=0">エラー停止一覧へ</a>
+    </div>
+<?php endif; ?>
+<?php if ($unsubscribeResult !== null): ?>
+    <div class="alert alert-success">
+        <?= number_format($unsubscribeResult['unsubscribed']) ?>件を購読解除しました。<?php if ($unsubscribeResult['skipped'] > 0): ?>（未登録・既に解除済みでスキップ: <?= number_format($unsubscribeResult['skipped']) ?>件）<?php endif; ?>
+        <a href="<?= SITE_URL ?>subscribers.php?status=9">購読解除一覧へ</a>
     </div>
 <?php endif; ?>
 <?php if ($deletedCount !== null): ?>
@@ -223,15 +269,16 @@ require_once CORE_INCLUDES_DIR . '/header.php';
 </div>
 
 <div class="card mt-4">
-    <div class="card-header"><h2>一括メンテナンス（不達停止・Yahoo削除）</h2></div>
+    <div class="card-header"><h2>一括メンテナンス（不達停止・購読解除・Yahoo削除）</h2></div>
     <div class="card-body">
         <div class="alert alert-info">
             大量配信の前に、<strong>既に不達と分かっているアドレスを停止</strong>したり、
+            <strong>外部システムで解除された読者を購読解除</strong>したり、
             <strong>配信できないドメインを削除</strong>してリストを浄化します。
             送信レピュテーション（迷惑メール判定）の悪化を防ぐために重要です。
         </div>
 
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px;">
 
             <div>
                 <h3 style="margin-top:0;">不達アドレスを一括エラー停止</h3>
@@ -248,6 +295,24 @@ require_once CORE_INCLUDES_DIR . '/header.php';
                         <input type="file" name="suppress_file" class="form-control" accept=".csv" required>
                     </div>
                     <button type="submit" class="btn btn-primary">CSVから一括停止</button>
+                </form>
+            </div>
+
+            <div>
+                <h3 style="margin-top:0;">解除アドレスを一括購読解除</h3>
+                <p class="form-hint">
+                    NowGetter 等の外部システムで<strong>購読解除された読者一覧（CSV）</strong>を取り込み、
+                    該当購読者を<strong>購読解除（status: 9）</strong>にします。エラー停止と違い「本人の解除」として記録します（後から復元可能）。<br>
+                    CSV は <code>1列目=メールアドレス</code>、1行目はヘッダーとして読み飛ばします。
+                </p>
+                <form method="post" enctype="multipart/form-data">
+                    <input type="hidden" name="csrf_token" value="<?= Token::getCsrf() ?>">
+                    <input type="hidden" name="mode" value="unsubscribe_csv">
+                    <div class="form-group">
+                        <label class="form-label">解除対象CSV<span class="required">*</span></label>
+                        <input type="file" name="unsubscribe_file" class="form-control" accept=".csv" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">CSVから一括購読解除</button>
                 </form>
             </div>
 

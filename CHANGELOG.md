@@ -2,6 +2,19 @@
 
 本プロジェクトの注目すべき変更点をまとめます。フォーマットは [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/) に準拠し、バージョニングは [SemVer](https://semver.org/lang/ja/) に従います。
 
+## [1.8.0] - 2026-06-23
+
+### Added
+- **`core/lib/file_db.php` / `core/app/subscriber_add.php`: 外部システムの購読解除を同期する「CSV一括購読解除」を追加。**
+  - **`FileDB::unsubscribeEmailsBulk()`**: CSV で渡したアドレス群を一括で「購読解除（status 9）」にする。NowGetter 等で本人が購読解除した読者を MailMag 側へ同期する用途。バウンス由来の `suppressEmailsBulk()`（status 0）とは別に、**自発的オプトアウトを意味的に正しい status 9 として記録**する（特定電子メール法のオプトアウト管理）。マッチ行のうち有効(1)・エラー停止(0)を 9 へ移行し、既に 9 はスキップ。`suppressEmailsBulk` と同じ `modifyCsvAtomic`（1回の `LOCK_EX` + `.bak` 退避）基盤に乗る O(N+M) 実装で可逆。
+  - UI は「購読者追加」→「一括メンテナンス」カードに第3操作「解除アドレスを一括購読解除」として追加（`mode=unsubscribe_csv`）。CSV は停止用と同形式（1列目=メールアドレス／1行目ヘッダ／BOM除去）。同カードのレイアウトを 3 項目対応（`auto-fit`）にしてレスポンシブ化。
+
+### Fixed
+- **`core/app/unsubscribe.php`: 単体購読解除で、CSV スキーマ(7列)に存在しない `unsubscribed_at` 列を `updateSubscriber()` に渡していた死にコードを除去。** 当該キーは `modifyCsvAtomic` の書き戻し（header 基準の固定列書き込み）で黙殺されており、機能・データへの影響はなかったが紛らわしいため削除。解除時刻は従来どおり `updated_at` に自動記録される。
+
+### Operational impact
+- 本リリースの変更は**すべて `core/` 配下**（自動更新対象）。ルートシェルや手動アップロードは不要で、既存クライアントは毎日の自動更新で機能が反映される。
+
 ## [1.7.0] - 2026-06-23
 
 ### Added

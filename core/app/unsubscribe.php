@@ -19,7 +19,9 @@ if (empty($token)) {
     } elseif ($sub['status'] === '9') {
         $state = 'done';
     } elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        FileDB::updateSubscriber($sub['id'], ['status' => '9', 'unsubscribed_at' => date('Y-m-d H:i:s')]);
+        // 解除時刻は updateSubscriber が updated_at に自動記録する。
+        // CSV スキーマ(7列)に存在しない unsubscribed_at は書き戻し時に黙殺される死にキーのため渡さない。
+        FileDB::updateSubscriber($sub['id'], ['status' => '9']);
         $state = 'done';
     }
 }

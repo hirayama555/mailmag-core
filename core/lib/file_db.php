@@ -282,6 +282,52 @@ final class FileDB
     }
 
     /**
+     * CSV 等で渡したメールアドレス群を「1回の原子的読み書き」で一括購読解除する。
+     *
+     * NowGetter 等の外部システムで購読解除された読者を MailMag 側へ同期する用途。
+     * バウンス（suppressEmailsBulk = status 0）と異なり、自発的オプトアウトを
+     * 意味的に正しい status=9（購読解除）として記録する。エラー停止(0)の行も、
+     * 解除が最終的な意思表示として優先されるため 9 へ移行する。既に 9 は対象外。
+     * suppressEmailsBulk と同じ modifyCsvAtomic（LOCK_EX + .bak）基盤に乗る。
+     *
+     * @param array<int,string> $emails 解除対象メール（重複・大小は内部で正規化）
+     * @return array{unsubscribed:int,skipped:int}
+     */
+    public static function unsubscribeEmailsBulk(array $emails): array
+    {
+        // 入力を正規化（小文字・トリム・空除去・重複排除）して集合化
+        $targets = [];
+        foreach ($emails as $e) {
+            $key = strtolower(trim((string)$e));
+            if ($key !== '') $targets[$key] = true;
+        }
+        if (empty($targets)) return ['unsubscribed' => 0, 'skipped' => 0];
+
+        $unsubscribed = 0;
+        self::modifyCsvAtomic(
+            DATA_DIR . '/subscribers.csv',
+            ['id','email','name','status','token','created_at','updated_at'],
+            function (array $rows) use ($targets, &$unsubscribed) {
+                foreach ($rows as &$row) {
+                    $key = strtolower($row['email'] ?? '');
+                    // 解除対象かつ未解除（有効1・エラー停止0）なら購読解除9へ
+                    if (isset($targets[$key]) && ($row['status'] ?? '') !== '9') {
+                        $row['status']     = '9';
+                        $row['updated_at'] = date('Y-m-d H:i:s');
+                        $unsubscribed++;
+                    }
+                }
+                unset($row);
+                return $unsubscribed > 0 ? $rows : false; // 1件も変更なしなら書き戻さない
+            }
+        );
+        return [
+            'unsubscribed' => $unsubscribed,
+            'skipped'      => count($targets) - $unsubscribed,
+        ];
+    }
+
+    /**
      * 指定ドメイン群に一致する購読者を「1回の原子的読み書き」で物理削除する。
      *
      * Yahoo 系（EXCLUDE_DOMAINS）のように恒久的に別経路へ回すアドレスを
